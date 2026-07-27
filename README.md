@@ -17,6 +17,7 @@ Em publicação na **Chrome Web Store**. Política de privacidade:
 
 ### Captura
 - Liga as legendas do Meet **automaticamente** e captura a transcrição enquanto estiverem ligadas (pausa/retoma com elas).
+- Reconcilia as janelas cumulativas/deslizantes do Meet para evitar blocos repetidos e divide falas longas em trechos legíveis com horário progressivo.
 - Histórico em **chat**: nome, horário e avatar colorido por participante; as mensagens do **chat de texto** do Meet entram **intercaladas em ordem cronológica** (com selo "chat") e **links viram clicáveis**.
 - **Indicador de captura**: ponto **vermelho REC** pulsante (capturando) / **terracota** (pausado).
 
@@ -53,17 +54,20 @@ Em publicação na **Chrome Web Store**. Política de privacidade:
 
 ## Desenvolvimento
 
-Requisitos: Node 18+.
+Requisitos de desenvolvimento: Node 22.12+. Uso: Google Chrome ou Microsoft Edge
+baseado em Chromium 109 ou mais recente.
 
 ```bash
 npm install
 npm run dev      # build de desenvolvimento com HMR (gera dist/)
+npm test         # regressões da captura deslizante e do horário/nome do chat
 npm run build    # type-check (tsc --noEmit) + build de produção em dist/
 npm run zip      # empacota dist/ em meetsync-<versão>.zip
 npm run package  # build + zip
 ```
 
-Não há suíte de testes — `npm run build` é o gate (precisa passar `tsc --noEmit` estrito).
+`npm test` cobre as regressões de deduplicação/segmentação e `npm run build` continua sendo o gate
+de tipagem estrita + empacotamento.
 
 > **Ícones**: gerados a partir de SVG via Chromium headless (nítidos no tamanho exato). **Não**
 > use `scripts/gen-icons.mjs` (gerador placeholder) nem `qlmanage`.
@@ -104,6 +108,16 @@ As chamadas ao Ollama são feitas pelo *service worker* da extensão, que já te
 ```bash
 OLLAMA_ORIGINS="chrome-extension://*" ollama serve
 ```
+
+## Segurança e privacidade
+
+- A extensão usa Manifest V3 e apenas código empacotado, com política de conteúdo restritiva.
+- Não pede permissão `downloads`: os arquivos são criados localmente após o clique do usuário.
+- Mensagens internas e importações de backup são validadas e limitadas antes do processamento.
+- O Ollama é aceito somente em `localhost` ou `127.0.0.1`; não há acesso a servidores remotos.
+- Em janela anônima, a captura funciona em memória e pode ser exportada, mas não cria histórico persistente.
+- O histórico normal fica em `chrome.storage.local` (até 40 reuniões) até ser excluído pelo usuário;
+  esse armazenamento local do Chrome não é criptografia de ponta a ponta.
 
 ---
 

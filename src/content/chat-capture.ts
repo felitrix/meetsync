@@ -14,6 +14,7 @@
 import { store } from '@/services/store';
 import { resolveSelfName } from './participant-resolver';
 import type { TranscriptEntry } from '@/types';
+import { parseChatHeader } from './caption-utils';
 
 const SELECTORS = {
   container: [
@@ -36,7 +37,6 @@ const SELECTORS = {
   unreadDot: '[jscontroller="fIa6jf"], .IxCbn',
 };
 
-const TIME_RE = /\b(\d{1,2}):(\d{2})\b/;
 // aria-label do botão de chat quando há mensagem não lida.
 const UNREAD_LABEL_RE = /nova mensagem|new message|não lida|unread/i;
 const DEBOUNCE_MS = 300;
@@ -72,19 +72,6 @@ function cleanText(root: Element): string {
     n = walker.nextNode();
   }
   return out.replace(/\s+/g, ' ').trim();
-}
-
-/** Converte "HH:MM" no horário de hoje para ISO; sem horário, usa agora. */
-function timeToIso(hhmm: string | null): string {
-  if (hhmm) {
-    const m = hhmm.match(TIME_RE);
-    if (m) {
-      const d = new Date();
-      d.setHours(Number(m[1]), Number(m[2]), 0, 0);
-      return d.toISOString();
-    }
-  }
-  return new Date().toISOString();
 }
 
 export class ChatCapture {
@@ -175,12 +162,12 @@ export class ChatCapture {
 
       this.seen.add(id);
 
-      const { name, time } = this.parseSender(msg);
+      const { name, capturedAt } = this.parseSender(msg);
       const entry: TranscriptEntry = {
         id: `chat:${id}`,
         participantName: name,
         text,
-        capturedAt: timeToIso(time),
+        capturedAt,
         source: 'google-meet-chat',
       };
       store.upsertEntry(entry);
@@ -188,7 +175,7 @@ export class ChatCapture {
   }
 
   /** Extrai remetente e horário do grupo da mensagem (header com nome + "HH:MM"). */
-  private parseSender(msg: Element): { name: string; time: string | null } {
+  private parseSender(msg: Element): { name: string; capturedAt: string } {
     const group = msg.closest(SELECTORS.group) ?? msg.parentElement ?? msg;
 
     // Texto do header = texto do grupo que NÃO está dentro de uma mensagem.
@@ -210,12 +197,10 @@ export class ChatCapture {
     }
     header = header.replace(/\s+/g, ' ').trim();
 
-    const timeMatch = header.match(TIME_RE);
-    const time = timeMatch ? timeMatch[0] : null;
-    let name = header;
-    if (time) name = name.replace(time, '').trim();
+    const parsed = parseChatHeader(header);
+    let name = parsed.name;
     if (!name) name = 'Você'; // mensagens próprias normalmente não mostram o nome
     name = resolveSelfName(name, store.get().settings.selfName); // "Você" → nome configurado
-    return { name, time };
+    return { name, capturedAt: parsed.capturedAt };
   }
 }

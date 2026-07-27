@@ -16,6 +16,7 @@ import {
   updateMeetingSummary,
   buildMeetingBackup,
   importMeetingBackup,
+  MAX_BACKUP_BYTES,
   type HistoryMeta,
 } from '@/services/storage-service';
 import {
@@ -1907,6 +1908,7 @@ export class Panel {
     if (!file) return;
     const hi = t().history;
     try {
+      if (file.size > MAX_BACKUP_BYTES) throw new Error('Backup muito grande.');
       const text = await file.text();
       const result = await importMeetingBackup(text);
       if (result.ok) {
@@ -2092,7 +2094,7 @@ export class Panel {
   private renderSummaryContent(s: AppState) {
     if (!this.copyWaBtn.disabled) this.copyWaBtn.classList.toggle('ms-hidden', !s.ui.summaryText || !!s.ui.summarizing);
     if (s.ui.summaryText) {
-      const tag = s.ui.summarizing ? `${s.ui.summaryText} stream` : s.ui.summaryText;
+      const tag = s.ui.summarizing ? `${s.ui.summaryText}\u0000stream` : s.ui.summaryText;
       if (tag !== this.renderedSummary) {
         this.renderedSummary = tag;
         renderMarkdownInto(this.summaryContent, s.ui.summaryText, s.ui.summarizing);

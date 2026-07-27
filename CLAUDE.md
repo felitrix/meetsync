@@ -68,8 +68,11 @@ live: captions use `[role="region"][aria-label*="Legenda"]` + `jscontroller`; th
 (`[jsname="dTKtvb"]` = text) and auto-opens the chat on the unread badge (`[jscontroller="fIa6jf"]` /
 aria-label "...nova mensagem"). Speaker rows are found **structurally** (the direct child of the region
 that contains the avatar `<img>`), not by class. Dedup: each caption DOM node → one entry (`WeakMap`),
-plus a tolerant `sameUtterance` (normalized, punctuation-insensitive prefix match) that collapses Meet's
-cumulative re-finalized blocks of a long monologue into one growing entry. Chat dedups by `data-message-id`.
+plus a rolling-window reconciler (`caption-utils.ts`) that appends only the unseen suffix when Meet
+slides a cumulative caption window. Long monologues are split into readable entries by size/time, and
+detached/recreated DOM rows can reconnect to a matching speaker stream. Chat dedups by
+`data-message-id`; its header parser handles both 24-hour and AM/PM timestamps without leaking `AM`
+into participant names.
 
 ### Mention alerts (toolbar action + notifications)
 

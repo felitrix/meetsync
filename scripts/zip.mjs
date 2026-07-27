@@ -1,4 +1,4 @@
-// Empacota a pasta dist/ em meetsync-<versão>.zip (RF-002) usando apenas o `zip` do sistema.
+// Empacota dist/ em meetsync-<versão>.zip (RF-002), com suporte a Windows e Unix.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -18,10 +18,31 @@ const out = resolve(root, `meetsync-${pkg.version}.zip`);
 if (existsSync(out)) rmSync(out);
 
 try {
-  // -r recursivo, -X sem atributos extras, executado de dentro de dist/ para zipar sem o prefixo "dist/".
-  execFileSync('zip', ['-rqX', out, '.'], { cwd: dist, stdio: 'inherit' });
+  if (process.platform === 'win32') {
+    // Variáveis dedicadas evitam interpolar caminhos no comando PowerShell.
+    const command =
+      '$source = $env:MEETSYNC_ZIP_SOURCE; ' +
+      '$destination = $env:MEETSYNC_ZIP_DESTINATION; ' +
+      'Get-ChildItem -LiteralPath $source -Force | ' +
+      'Compress-Archive -DestinationPath $destination -CompressionLevel Optimal -Force';
+    execFileSync(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-Command', command],
+      {
+        stdio: 'inherit',
+        env: {
+          ...process.env,
+          MEETSYNC_ZIP_SOURCE: dist,
+          MEETSYNC_ZIP_DESTINATION: out,
+        },
+      },
+    );
+  } else {
+    // -r recursivo, -X sem atributos extras; cwd evita o prefixo "dist/" no pacote.
+    execFileSync('zip', ['-rqX', out, '.'], { cwd: dist, stdio: 'inherit' });
+  }
   console.log(`✓ Pacote gerado: ${out}`);
 } catch (err) {
-  console.error('✗ Falha ao gerar zip. O utilitário `zip` está instalado?', err.message);
+  console.error('✗ Falha ao gerar zip:', err.message);
   process.exit(1);
 }

@@ -30,7 +30,7 @@ Recursos:
 • Rede de segurança: a transcrição é salva localmente e pode ser recuperada se a aba fechar/recarregar.
 • Após a reunião, o painel continua na tela para você revisar e baixar com calma.
 
-Privacidade: os dados ficam no seu navegador. Nada é enviado para servidores externos — exceto, se você ativar a IA, para o endereço do Ollama que você mesmo configurar.
+Privacidade: os dados ficam no seu navegador. Se você ativar a IA, a transcrição é enviada somente ao Ollama local (`localhost`/`127.0.0.1`) na sua própria máquina.
 
 Não captura áudio bruto, não grava tela e não usa rastreadores.
 
@@ -39,7 +39,6 @@ Capturar, organizar e exportar a transcrição (legendas e chat) de reuniões do
 
 ## Justificativa das permissões (campo "Privacy practices")
 - **storage:** salvar localmente as preferências do usuário (URL/modelo do Ollama, opções de exportação).
-- **downloads:** exportar a transcrição/ata como arquivos .txt e .json.
 - **notifications:** avisar o usuário quando a captura de uma reunião começa e quando a reunião termina (transcrição pronta para revisar/baixar) — feedback local, sem coleta de dados.
 - **host meet.google.com / teams.cloud.microsoft / teams.microsoft.com:** ler as legendas e o chat exibidos na própria página da reunião (Google Meet e Microsoft Teams) — função central da extensão.
 - **host localhost / 127.0.0.1:** comunicar-se, apenas quando o usuário ativa a IA, com um servidor Ollama na máquina do próprio usuário, para correção/resumo da transcrição.
@@ -77,7 +76,7 @@ Features:
 • Safety net: the transcript is saved locally and can be recovered if the tab closes/reloads.
 • After the meeting, the panel stays on screen so you can review and download at your own pace.
 
-Privacy: data stays in your browser. Nothing is sent to external servers — except, if you enable AI, to the Ollama address you configure yourself.
+Privacy: data stays in your browser. If you enable AI, the transcript is sent only to local Ollama (`localhost`/`127.0.0.1`) on your own computer.
 
 It does not capture raw audio, does not record the screen and uses no trackers.
 
@@ -86,7 +85,6 @@ Capture, organize and export the transcript (captions and chat) of Google Meet a
 
 ## Permission justifications
 - **storage:** save user preferences locally (Ollama URL/model, export options).
-- **downloads:** export the transcript/minutes as .txt and .json files.
 - **notifications:** tell the user when a meeting’s capture starts and when it ends (transcript ready to review/download) — local feedback, no data collection.
 - **host meet.google.com / teams.cloud.microsoft / teams.microsoft.com:** read the captions and chat shown on the meeting page (Google Meet and Microsoft Teams) — the extension’s core function.
 - **host localhost / 127.0.0.1:** communicate, only when the user enables AI, with an Ollama server on the user’s own machine, for transcript correction/summary.
@@ -117,7 +115,7 @@ Funciones:
 • Red de seguridad: la transcripción se guarda localmente y puede recuperarse si la pestaña se cierra/recarga.
 • Tras la reunión, el panel permanece en pantalla para que revises y descargues con calma.
 
-Privacidad: los datos quedan en tu navegador. Nada se envía a servidores externos — excepto, si activas la IA, a la dirección de Ollama que tú mismo configures.
+Privacidad: los datos quedan en tu navegador. Si activas la IA, la transcripción se envía únicamente al Ollama local (`localhost`/`127.0.0.1`) de tu propio equipo.
 
 No captura audio en bruto, no graba la pantalla y no usa rastreadores.
 
@@ -126,11 +124,41 @@ Capturar, organizar y exportar la transcripción (subtítulos y chat) de reunion
 
 ## Justificación de los permisos
 - **storage:** guardar localmente las preferencias del usuario (URL/modelo de Ollama, opciones de exportación).
-- **downloads:** exportar la transcripción/acta como archivos .txt y .json.
 - **notifications:** avisar al usuario cuando empieza la captura de una reunión y cuando termina (transcripción lista para revisar/descargar) — feedback local, sin recolección de datos.
 - **host meet.google.com / teams.cloud.microsoft / teams.microsoft.com:** leer los subtítulos y el chat mostrados en la página de la reunión (Google Meet y Microsoft Teams) — función central de la extensión.
 - **host localhost / 127.0.0.1:** comunicarse, solo cuando el usuario activa la IA, con un servidor Ollama en la propia máquina del usuario, para corrección/resumen de la transcripción.
 - **Uso de datos:** la extensión NO recopila datos de navegación, NO usa analytics y NO comparte/vende datos. El contenido de la reunión solo sale del navegador si el usuario activa la IA, y únicamente hacia la URL de Ollama configurada por él.
+
+---
+
+# Novidades / What's new / Novedades — v0.4.6
+
+## 🇧🇷 Português
+**Transcrição mais limpa e captura mais resistente**
+- Corrigido: janelas cumulativas/deslizantes de legenda não são mais exportadas repetidamente.
+- Falas longas passam a aparecer em blocos legíveis com horários progressivos, sem parecer que a captura parou.
+- A captura se reconecta quando o Meet substitui ou oculta temporariamente o painel de legendas.
+- Corrigido: `AM`/`PM` não fica mais anexado ao nome de participantes do chat; nomes duplicados no header também são normalizados.
+- Reações anônimas repetidas são agrupadas para reduzir ruído.
+- Segurança: permissões reduzidas, Ollama restrito ao computador local, mensagens internas validadas, importação de backups limitada e histórico desativado no modo anônimo.
+
+## 🇺🇸 English
+**Cleaner transcripts and more resilient capture**
+- Fixed: cumulative/sliding caption windows are no longer exported repeatedly.
+- Long speech is split into readable, progressively timestamped entries instead of looking stalled.
+- Capture reconnects when Meet replaces or temporarily hides the captions panel.
+- Fixed: `AM`/`PM` no longer leaks into chat participant names; duplicated header names are normalized.
+- Repeated anonymous reactions are grouped to reduce noise.
+- Security: reduced permissions, local-only Ollama, validated internal messages, bounded backup imports, and no persistent meeting history in Incognito.
+
+## 🇪🇸 Español
+**Transcripciones más limpias y captura más resistente**
+- Corregido: las ventanas acumulativas/deslizantes de subtítulos ya no se exportan repetidamente.
+- Las intervenciones largas se dividen en bloques legibles con horarios progresivos.
+- La captura se reconecta cuando Meet reemplaza u oculta temporalmente el panel de subtítulos.
+- Corregido: `AM`/`PM` ya no queda unido al nombre de participantes del chat y los nombres duplicados se normalizan.
+- Las reacciones anónimas repetidas se agrupan para reducir ruido.
+- Seguridad: permisos reducidos, Ollama solo local, mensajes internos validados, importaciones de backup limitadas y sin historial persistente en modo incógnito.
 
 ---
 

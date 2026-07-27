@@ -241,6 +241,16 @@ export async function updateMeetingSummary(id: string, summaryText: string): Pro
 // ---- Backup de reunião (exportar/importar entre dispositivos) ----
 const BACKUP_SCHEMA = 'meetsync-backup';
 const BACKUP_SCHEMA_VERSION = 1;
+export const MAX_BACKUP_BYTES = 8 * 1024 * 1024;
+const MAX_BACKUP_ENTRIES = 50_000;
+const TRANSCRIPT_SOURCES = new Set([
+  'google-meet-caption',
+  'google-meet-chat',
+  'google-meet-event',
+  'microsoft-teams-caption',
+  'microsoft-teams-chat',
+  'microsoft-teams-event',
+]);
 
 export type MeetingBackup = {
   schema: typeof BACKUP_SCHEMA;
@@ -257,22 +267,89 @@ export function buildMeetingBackup(meta: HistoryMeta, saved: SavedMeeting): stri
   return JSON.stringify(backup, null, 2);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isBoundedString(value: unknown, max: number, allowEmpty = true): value is string {
+  return typeof value === 'string' && value.length <= max && (allowEmpty || value.length > 0);
+}
+
+function isOptionalIso(value: unknown): value is string | undefined {
+  return value === undefined || (isBoundedString(value, 64, false) && Number.isFinite(Date.parse(value)));
+}
+
+function isValidImportedSession(value: unknown): value is MeetingSession {
+  if (!isRecord(value)) return false;
+  const provider = value.provider;
+  if (provider !== undefined && provider !== 'google-meet' && provider !== 'microsoft-teams') return false;
+  if (
+    !isBoundedString(value.id, 200, false) ||
+    !isBoundedString(value.meetingCode, 300) ||
+    !isBoundedString(value.meetingUrl, 2_048) ||
+    (value.meetingTitle !== undefined && !isBoundedString(value.meetingTitle, 2_000)) ||
+    !isOptionalIso(value.captureStartedAt) ||
+    !isOptionalIso(value.captureEndedAt) ||
+    !Array.isArray(value.participants) ||
+    value.participants.length > 2_000 ||
+    !Array.isArray(value.transcript) ||
+    value.transcript.length > MAX_BACKUP_ENTRIES
+  ) {
+    return false;
+  }
+  if (
+    !value.participants.every(
+      (participant) =>
+        isRecord(participant) &&
+        isBoundedString(participant.name, 500, false) &&
+        (participant.id === undefined || isBoundedString(participant.id, 500)) &&
+        (participant.avatarUrl === undefined || isBoundedString(participant.avatarUrl, 4_096)),
+    )
+  ) {
+    return false;
+  }
+  return value.transcript.every(
+    (entry) =>
+      isRecord(entry) &&
+      isBoundedString(entry.id, 200, false) &&
+      isBoundedString(entry.participantName, 500, false) &&
+      (entry.participantAvatarUrl === undefined || isBoundedString(entry.participantAvatarUrl, 4_096)) &&
+      isBoundedString(entry.text, 100_000, false) &&
+      isBoundedString(entry.capturedAt, 64, false) &&
+      Number.isFinite(Date.parse(entry.capturedAt)) &&
+      typeof entry.source === 'string' &&
+      TRANSCRIPT_SOURCES.has(entry.source),
+  );
+}
+
 /** Importa um backup gerado por buildMeetingBackup: grava a reunião no histórico deste
  *  dispositivo (upsert por session.id — reimportar o mesmo arquivo atualiza, não duplica). */
 export async function importMeetingBackup(json: string): Promise<{ ok: true } | { ok: false; error: 'invalid_json' | 'invalid_schema' }> {
+  if (new Blob([json]).size > MAX_BACKUP_BYTES) return { ok: false, error: 'invalid_schema' };
   let data: unknown;
   try {
     data = JSON.parse(json);
   } catch {
     return { ok: false, error: 'invalid_json' };
   }
-  const d = data as Partial<MeetingBackup> | null;
-  const session = d?.saved?.session;
-  if (d?.schema !== BACKUP_SCHEMA || !session?.id || !Array.isArray(session.transcript)) {
+  if (!isRecord(data) || data.schema !== BACKUP_SCHEMA || data.schemaVersion !== BACKUP_SCHEMA_VERSION) {
     return { ok: false, error: 'invalid_schema' };
   }
-  await saveMeeting(session, d.saved?.summaryText);
-  if (d.starred) await setMeetingStarred(session.id, true);
+  const saved = data.saved;
+  if (
+    typeof data.starred !== 'boolean' ||
+    !isRecord(saved) ||
+    !isValidImportedSession(saved.session) ||
+    !isBoundedString(saved.savedAt, 64, false) ||
+    !Number.isFinite(Date.parse(saved.savedAt)) ||
+    (saved.summaryText !== undefined && !isBoundedString(saved.summaryText, 2_000_000))
+  ) {
+    return { ok: false, error: 'invalid_schema' };
+  }
+  const session = saved.session;
+  if (!session.provider) session.provider = 'google-meet';
+  await saveMeeting(session, saved.summaryText as string | undefined);
+  if (data.starred) await setMeetingStarred(session.id, true);
   return { ok: true };
 }
 

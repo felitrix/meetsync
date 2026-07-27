@@ -55,13 +55,13 @@
 </div>
 
 <h1>Política de Privacidade</h1>
-<p class="muted">Última atualização: 11 de junho de 2026 · Desenvolvido pela DevSync</p>
+<p class="muted">Última atualização: 26 de julho de 2026 · Desenvolvido pela DevSync</p>
 
-<p>O <strong>MeetSync</strong> é uma extensão do Chrome que captura as <strong>legendas e mensagens de chat exibidas pelo próprio Google Meet</strong>, organiza-as como uma conversa e permite exportá-las em arquivos <code>.txt</code> e <code>.json</code>. Esta política explica quais dados a extensão acessa e como eles são tratados.</p>
+<p>O <strong>MeetSync</strong> é uma extensão do Chrome que captura as <strong>legendas e mensagens de chat exibidas pelo Google Meet e Microsoft Teams Web</strong>, organiza-as como uma conversa e permite exportá-las em arquivos <code>.txt</code> e <code>.json</code>. Esta política explica quais dados a extensão acessa e como eles são tratados.</p>
 
 <h2>1. Dados que a extensão acessa</h2>
 <ul>
-  <li><strong>Texto das legendas e do chat</strong> da reunião do Google Meet, enquanto você está em uma reunião e a captura está ativa.</li>
+  <li><strong>Texto das legendas e do chat</strong> do Google Meet ou Microsoft Teams Web, enquanto você está em uma reunião e a captura está ativa.</li>
   <li><strong>Metadados da reunião</strong> visíveis na página: título, link, código, data/horário e nomes dos participantes.</li>
   <li><strong>Suas configurações</strong> da extensão (ex.: URL do servidor Ollama, modelo escolhido e preferências de exportação).</li>
 </ul>
@@ -75,16 +75,16 @@
 </ul>
 
 <h2>3. Armazenamento</h2>
-<p>A transcrição da reunião fica <strong>no seu navegador</strong> (em memória e/ou em <code>chrome.storage.local</code>) e é isolada/descartada ao iniciar uma nova reunião. Os arquivos exportados (<code>.txt</code>/<code>.json</code>) são salvos localmente, por ação sua, na pasta de downloads do seu computador.</p>
+<p>A transcrição fica <strong>no seu navegador</strong>: durante a captura, em memória; no modo normal, também no histórico local (<code>chrome.storage.local</code>), limitado às 40 reuniões mais recentes e disponível até você excluir cada registro. Em janela anônima, nenhuma reunião é adicionada ao histórico persistente. Os arquivos exportados (<code>.txt</code>/<code>.json</code>) são salvos localmente, por ação sua.</p>
 
 <h2>4. Recursos de IA (Ollama) — opcionais</h2>
-<p>A correção da transcrição e a geração de resumo/ata são <strong>opcionais</strong> e só funcionam se <em>você</em> configurar e ativar um servidor <a href="https://ollama.com" target="_blank" rel="noopener">Ollama</a> (normalmente em <code>http://localhost:11434</code>, na sua própria máquina). Quando — e somente quando — você ativa esses recursos, o conteúdo da transcrição é enviado para a URL do Ollama que você configurou, para ser processado. Nenhum dado é enviado a terceiros além desse destino escolhido por você.</p>
+<p>A correção da transcrição e a geração de resumo/ata são <strong>opcionais</strong> e só funcionam se <em>você</em> ativar um servidor <a href="https://ollama.com" target="_blank" rel="noopener noreferrer">Ollama</a> na própria máquina. Quando — e somente quando — você ativa esses recursos, o conteúdo da transcrição é enviado ao Ollama local em <code>localhost</code> ou <code>127.0.0.1</code>. A extensão bloqueia destinos remotos.</p>
 
 <h2>5. Permissões</h2>
 <ul>
   <li><code>storage</code> — salvar suas configurações localmente.</li>
-  <li><code>downloads</code> — exportar a transcrição em arquivo.</li>
-  <li>Acesso a <code>meet.google.com</code> — ler as legendas/chat exibidos na reunião.</li>
+  <li><code>notifications</code> — avisar localmente quando a captura começa/termina e quando uma regra de alerta dispara.</li>
+  <li>Acesso a <code>meet.google.com</code>, <code>teams.cloud.microsoft</code> e <code>teams.microsoft.com</code> — ler as legendas/chat exibidos na reunião.</li>
   <li>Acesso a <code>localhost</code>/<code>127.0.0.1</code> — falar com o Ollama na sua máquina, apenas quando a IA está ativa.</li>
 </ul>
 
@@ -94,13 +94,13 @@
 <hr />
 
 <h1>MeetSync — Privacy Policy (English)</h1>
-<p class="muted">Last updated: June 11, 2026 · Built by DevSync</p>
+<p class="muted">Last updated: July 26, 2026 · Built by DevSync</p>
 
-<p><strong>MeetSync</strong> is a Chrome extension that captures the <strong>captions and chat messages already shown by Google Meet</strong>, organizes them as a conversation, and lets you export them as <code>.txt</code> and <code>.json</code> files. This policy explains what data the extension accesses and how it is handled.</p>
+<p><strong>MeetSync</strong> is a Chrome extension that captures the <strong>captions and chat messages shown by Google Meet and Microsoft Teams Web</strong>, organizes them as a conversation, and lets you export them as <code>.txt</code> and <code>.json</code> files. This policy explains what data the extension accesses and how it is handled.</p>
 
 <h2>1. Data the extension accesses</h2>
 <ul>
-  <li><strong>Caption and chat text</strong> from the Google Meet meeting, while you are in a meeting and capture is active.</li>
+  <li><strong>Caption and chat text</strong> from Google Meet or Microsoft Teams Web, while you are in a meeting and capture is active.</li>
   <li><strong>Meeting metadata</strong> visible on the page: title, link, code, date/time, and participant names.</li>
   <li><strong>Your extension settings</strong> (e.g., Ollama server URL, chosen model, export preferences).</li>
 </ul>
@@ -114,16 +114,16 @@
 </ul>
 
 <h2>3. Storage</h2>
-<p>The meeting transcript stays <strong>in your browser</strong> (in memory and/or <code>chrome.storage.local</code>) and is isolated/cleared when a new meeting starts. Exported files are saved locally, by your action, to your computer's downloads folder.</p>
+<p>The transcript stays <strong>in your browser</strong>: in memory during capture and, in normal mode, in local history (<code>chrome.storage.local</code>), limited to the 40 most recent meetings and kept until you delete each record. In Incognito, no meeting is added to persistent history. Exported files are saved locally by your action.</p>
 
 <h2>4. AI features (Ollama) — optional</h2>
-<p>Transcript correction and summary/minutes generation are <strong>optional</strong> and only work if <em>you</em> configure and enable an <a href="https://ollama.com" target="_blank" rel="noopener">Ollama</a> server (typically <code>http://localhost:11434</code>, on your own machine). When — and only when — you enable these features, the transcript content is sent to the Ollama URL you configured for processing. No data is sent to any third party other than that destination you chose.</p>
+<p>Transcript correction and summary/minutes generation are <strong>optional</strong> and only work if <em>you</em> enable an <a href="https://ollama.com" target="_blank" rel="noopener noreferrer">Ollama</a> server on your own computer. When — and only when — you enable these features, transcript content is sent to local Ollama at <code>localhost</code> or <code>127.0.0.1</code>. Remote destinations are blocked.</p>
 
 <h2>5. Permissions</h2>
 <ul>
   <li><code>storage</code> — save your settings locally.</li>
-  <li><code>downloads</code> — export the transcript to a file.</li>
-  <li>Access to <code>meet.google.com</code> — read the captions/chat shown in the meeting.</li>
+  <li><code>notifications</code> — locally notify you when capture starts/ends and when an alert rule triggers.</li>
+  <li>Access to <code>meet.google.com</code>, <code>teams.cloud.microsoft</code>, and <code>teams.microsoft.com</code> — read the captions/chat shown in the meeting.</li>
   <li>Access to <code>localhost</code>/<code>127.0.0.1</code> — talk to Ollama on your machine, only when AI is enabled.</li>
 </ul>
 
@@ -133,13 +133,13 @@
 <hr />
 
 <h1>MeetSync — Política de Privacidad (Español)</h1>
-<p class="muted">Última actualización: 11 de junio de 2026 · Desarrollado por DevSync</p>
+<p class="muted">Última actualización: 26 de julio de 2026 · Desarrollado por DevSync</p>
 
-<p><strong>MeetSync</strong> es una extensión de Chrome que captura los <strong>subtítulos y mensajes de chat que el propio Google Meet muestra</strong>, los organiza como una conversación y permite exportarlos en archivos <code>.txt</code> y <code>.json</code>. Esta política explica a qué datos accede la extensión y cómo se tratan.</p>
+<p><strong>MeetSync</strong> es una extensión de Chrome que captura los <strong>subtítulos y mensajes de chat mostrados por Google Meet y Microsoft Teams Web</strong>, los organiza como una conversación y permite exportarlos en archivos <code>.txt</code> y <code>.json</code>. Esta política explica a qué datos accede la extensión y cómo se tratan.</p>
 
 <h2>1. Datos a los que accede la extensión</h2>
 <ul>
-  <li><strong>Texto de los subtítulos y del chat</strong> de la reunión de Google Meet, mientras estás en una reunión y la captura está activa.</li>
+  <li><strong>Texto de los subtítulos y del chat</strong> de Google Meet o Microsoft Teams Web, mientras estás en una reunión y la captura está activa.</li>
   <li><strong>Metadatos de la reunión</strong> visibles en la página: título, enlace, código, fecha/hora y nombres de los participantes.</li>
   <li><strong>Tus ajustes</strong> de la extensión (p. ej., URL del servidor Ollama, modelo elegido y preferencias de exportación).</li>
 </ul>
@@ -153,16 +153,16 @@
 </ul>
 
 <h2>3. Almacenamiento</h2>
-<p>La transcripción de la reunión queda <strong>en tu navegador</strong> (en memoria y/o en <code>chrome.storage.local</code>) y se aísla/descarta al iniciar una nueva reunión. Los archivos exportados (<code>.txt</code>/<code>.json</code>) se guardan localmente, por tu acción, en la carpeta de descargas de tu equipo.</p>
+<p>La transcripción queda <strong>en tu navegador</strong>: en memoria durante la captura y, en modo normal, también en el historial local (<code>chrome.storage.local</code>), limitado a las 40 reuniones más recientes y conservado hasta que elimines cada registro. En modo incógnito no se añade ninguna reunión al historial persistente. Los archivos exportados se guardan localmente por tu acción.</p>
 
 <h2>4. Funciones de IA (Ollama) — opcionales</h2>
-<p>La corrección de la transcripción y la generación de resumen/acta son <strong>opcionales</strong> y solo funcionan si <em>tú</em> configuras y activas un servidor <a href="https://ollama.com" target="_blank" rel="noopener">Ollama</a> (normalmente en <code>http://localhost:11434</code>, en tu propia máquina). Cuando — y solo cuando — activas estas funciones, el contenido de la transcripción se envía a la URL de Ollama que configuraste, para ser procesado. No se envía ningún dato a terceros más allá de ese destino elegido por ti.</p>
+<p>La corrección de la transcripción y la generación de resumen/acta son <strong>opcionales</strong> y solo funcionan si <em>tú</em> activas un servidor <a href="https://ollama.com" target="_blank" rel="noopener noreferrer">Ollama</a> en tu propio equipo. Cuando — y solo cuando — activas estas funciones, la transcripción se envía al Ollama local en <code>localhost</code> o <code>127.0.0.1</code>. La extensión bloquea destinos remotos.</p>
 
 <h2>5. Permisos</h2>
 <ul>
   <li><code>storage</code> — guardar tus ajustes localmente.</li>
-  <li><code>downloads</code> — exportar la transcripción a un archivo.</li>
-  <li>Acceso a <code>meet.google.com</code> — leer los subtítulos/chat mostrados en la reunión.</li>
+  <li><code>notifications</code> — avisarte localmente cuando la captura empieza/termina y cuando se activa una regla de alerta.</li>
+  <li>Acceso a <code>meet.google.com</code>, <code>teams.cloud.microsoft</code> y <code>teams.microsoft.com</code> — leer los subtítulos/chat mostrados en la reunión.</li>
   <li>Acceso a <code>localhost</code>/<code>127.0.0.1</code> — comunicarse con Ollama en tu máquina, solo cuando la IA está activa.</li>
 </ul>
 
