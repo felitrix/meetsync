@@ -15,10 +15,12 @@ import {
   renameMeeting,
   updateMeetingSummary,
   buildMeetingBackup,
-  importMeetingBackup,
+  importMeetingFile,
+  applyHistoryRetention,
   MAX_BACKUP_BYTES,
   type HistoryMeta,
 } from '@/services/storage-service';
+import { HISTORY_RETENTION_OPTIONS, type HistoryRetentionCount } from '@/services/retention-utils';
 import {
   buildTxt,
   buildSummaryTxt,
@@ -294,6 +296,8 @@ export class Panel {
   private currentDetailMeetingId: string | null = null;
   private histImportInput!: HTMLInputElement;
   private histImportStatus!: HTMLElement;
+  private retentionPills!: HTMLElement;
+  private retentionNote!: HTMLElement;
   // modal de confirmação genérico (ex.: excluir reunião)
   private confirmModal!: HTMLElement;
   private confirmTitleEl!: HTMLElement;
@@ -663,6 +667,48 @@ export class Panel {
     this.intervalPills.parentElement?.classList.toggle('ms-hidden', !s.settings.realtimeSummary);
   }
 
+  private renderRetentionPills(s: AppState) {
+    const x = t().exportTab;
+    const selected = s.settings.historyRetentionCount;
+    this.retentionPills.replaceChildren(
+      ...HISTORY_RETENTION_OPTIONS.map((count) => {
+        const button = el('button', {
+          class: 'ms-pill' + (selected === count ? ' is-sel' : ''),
+          type: 'button',
+          text: x.retentionOption(count),
+        }) as HTMLButtonElement;
+        button.addEventListener('click', () => void this.changeHistoryRetention(count));
+        return button;
+      }),
+    );
+    this.retentionNote.textContent = x.historyRetentionDesc;
+  }
+
+  private async changeHistoryRetention(next: HistoryRetentionCount) {
+    const current = store.get().settings.historyRetentionCount;
+    if (next === current) return;
+    const x = t().exportTab;
+    if (next < current) {
+      const history = await loadHistory();
+      const removable = Math.max(0, history.filter((item) => !item.starred).length - next);
+      if (removable > 0) {
+        const confirmed = await this.confirmDialog(
+          x.retentionConfirmTitle,
+          x.retentionConfirmMsg(removable, next),
+          x.retentionConfirmYes,
+          x.retentionConfirmNo,
+        );
+        if (!confirmed) return;
+      }
+    }
+    await store.updateSettings({ historyRetentionCount: next });
+    const result = await applyHistoryRetention(next);
+    this.retentionNote.textContent = result.removed > 0
+      ? x.retentionApplied(result.removed)
+      : x.historyRetentionDesc;
+    if (store.get().ui.historyOpen) await this.refreshHistory();
+  }
+
   // ---------- aba Alertas (menções) ----------
   private buildAlertsTab(): HTMLElement {
     // Barra "Monitorar a reunião" (toggle mestre)
@@ -906,6 +952,13 @@ export class Panel {
     this.tgSummary = toggleRow({ label: x.summary, desc: x.summaryDesc, onChange: (v) => void store.updateSettings({ includeSummary: v }) });
     this.tgSeparate = toggleRow({ label: x.separate, desc: x.separateDesc, onChange: (v) => void store.updateSettings({ separateSummaryFile: v }) });
     this.tgJson = toggleRow({ label: x.json, desc: x.jsonDesc, onChange: (v) => void store.updateSettings({ exportJson: v }) });
+    this.retentionPills = el('div', { class: 'ms-pill-group' });
+    this.retentionNote = el('div', { class: 'ms-vocab-desc ms-mt-2' });
+    const retentionSection = el('div', { class: 'ms-section' }, [
+      this.sectionLabel(x.historyRetention, icons.history),
+      this.retentionPills,
+      this.retentionNote,
+    ]);
 
     // Seletor de idioma — troca UI + exportações + IA, e re-renderiza o painel.
     const langField = el('div', { class: 'ms-section' }, [
@@ -998,6 +1051,7 @@ export class Panel {
       el('div', { class: 'ms-section' }, [this.sectionLabel(x.capturePrefs, icons.clock), this.tgAutoStart.root, this.tgAutoChat.root]),
       selfNameField,
       el('div', { class: 'ms-section' }, [this.sectionLabel(x.exportOptions, icons.settings), this.tgHeader.root, this.tgCorrect.root, this.tgSummary.root, this.tgSeparate.root, this.tgJson.root]),
+      retentionSection,
       vocabSection,
       ollamaSection,
       previewSection,
@@ -1910,9 +1964,16 @@ export class Panel {
     try {
       if (file.size > MAX_BACKUP_BYTES) throw new Error('Backup muito grande.');
       const text = await file.text();
-      const result = await importMeetingBackup(text);
+      const result = await importMeetingFile(text);
       if (result.ok) {
-        this.showHistImportStatus(hi.importOk, false);
+        if (result.kind === 'cleaned-export') {
+          const percent = result.originalCaptionChars > 0
+            ? Math.round((result.removedCaptionChars / result.originalCaptionChars) * 100)
+            : 0;
+          this.showHistImportStatus(hi.importCleanOk(percent), false);
+        } else {
+          this.showHistImportStatus(hi.importOk, false);
+        }
         this.histMetas = await loadHistory();
         this.renderHistoryList();
       } else {
@@ -1948,22 +2009,34 @@ export class Panel {
     this.captionsToggle.setDisabled(s.ended);
 
     // Indicador compacto + status strip (REC/clay) — só atualiza quando o estado muda.
-    if (this.lastDotKind !== s.captureStatus) {
-      this.lastDotKind = s.captureStatus;
+    const dotKind = `${s.captureStatus}:${s.captureHealth.silent}`;
+    if (this.lastDotKind !== dotKind) {
+      this.lastDotKind = dotKind;
       const cs = t().captureStatus;
       const map: Record<string, { dot: string; label: string; lcls: string }> = {
-        capturing: { dot: 'is-rec', label: cs.active, lcls: 'is-rec' },
-        processing: { dot: 'is-processing', label: cs.processing, lcls: '' },
-        error: { dot: 'is-error', label: cs.errorShort, lcls: 'is-error' },
+        'capturing:false': { dot: 'is-rec', label: cs.active, lcls: 'is-rec' },
+        'capturing:true': { dot: 'is-paused', label: cs.silentShort, lcls: 'is-paused' },
+        'processing:false': { dot: 'is-processing', label: cs.processing, lcls: '' },
+        'processing:true': { dot: 'is-processing', label: cs.processing, lcls: '' },
+        'error:false': { dot: 'is-error', label: cs.errorShort, lcls: 'is-error' },
+        'error:true': { dot: 'is-error', label: cs.errorShort, lcls: 'is-error' },
       };
-      const m = map[s.captureStatus] ?? { dot: 'is-paused', label: cs.paused, lcls: 'is-paused' };
+      const m = map[dotKind] ?? { dot: 'is-paused', label: cs.paused, lcls: 'is-paused' };
       this.compactDot.className = `ms-dot ${m.dot}`;
       this.compactDotLabel.textContent = m.label;
       this.compactDotLabel.className = m.lcls;
     }
     const cs = t().captureStatus;
+    const lastCaptionTime = s.captureHealth.lastCaptionAt ? formatTime(s.captureHealth.lastCaptionAt) : undefined;
+    const healthTitle = cs.healthTitle(lastCaptionTime, s.captureHealth.reconnectCount);
+    this.compactDotLabel.title = healthTitle;
+    this.stripStatus.title = healthTitle;
     if (s.ended) statusInto(this.stripStatus, 'idle', cs.endedStrip);
-    else if (s.captureStatus === 'capturing') statusInto(this.stripStatus, 'rec', cs.active);
+    else if (s.captureStatus === 'capturing' && s.captureHealth.silent) {
+      statusInto(this.stripStatus, 'paused', cs.silentHealth(lastCaptionTime));
+    } else if (s.captureStatus === 'capturing') {
+      statusInto(this.stripStatus, 'rec', cs.activeHealth(s.captureHealth.reconnectCount));
+    }
     else if (s.captureStatus === 'processing') statusInto(this.stripStatus, 'busy', cs.processingEllipsis);
     else if (s.captureStatus === 'error') statusInto(this.stripStatus, 'error', cs.errorProcessing);
     else statusInto(this.stripStatus, 'paused', cs.capturePaused);
@@ -1991,6 +2064,7 @@ export class Panel {
     this.tgSummary.setOn(s.settings.includeSummary); this.tgSummary.setDisabled(!ready); this.tgSummary.setNote(ready ? null : xn.noteRequiresOllamaModel);
     this.tgSeparate.setOn(s.settings.separateSummaryFile); this.tgSeparate.setDisabled(!ready || !s.settings.includeSummary); this.tgSeparate.setNote(!ready ? xn.noteRequiresOllama : (!s.settings.includeSummary ? xn.noteEnableSummaryFirst : null));
     this.tgJson.setOn(s.settings.exportJson);
+    this.renderRetentionPills(s);
     if (!isFocused(this.selfNameInput) && this.selfNameInput.value !== s.settings.selfName) this.selfNameInput.value = s.settings.selfName;
     this.renderVocab(s);
 

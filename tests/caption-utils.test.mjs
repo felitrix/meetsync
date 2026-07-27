@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  cleanRollingTranscript,
   findCaptionSegmentCut,
   mergeRollingCaption,
   parseChatHeader,
@@ -79,4 +80,61 @@ test('corta fala longa em limite de palavra ou pontuação', () => {
   assert.ok(cut > 250);
   assert.ok(cut <= 700);
   assert.notEqual(text[cut - 1], 'r');
+});
+
+test('limpa uma exportação antiga cumulativa sem alterar chat legítimo', () => {
+  const source = 'google-meet-caption';
+  const cleaned = cleanRollingTranscript([
+    {
+      id: '1',
+      participantName: 'Ana',
+      text: 'um dois três quatro cinco seis',
+      capturedAt: '2026-07-22T14:00:00.000Z',
+      source,
+    },
+    {
+      id: '2',
+      participantName: 'Ana',
+      text: 'um dois três quatro cinco seis sete oito',
+      capturedAt: '2026-07-22T14:00:02.000Z',
+      source,
+    },
+    {
+      id: '3',
+      participantName: 'Ana',
+      text: 'três quatro cinco seis sete oito nove dez',
+      capturedAt: '2026-07-22T14:00:04.000Z',
+      source,
+    },
+    {
+      id: '4',
+      participantName: 'Artesanato Costa Artesanato Costa AM',
+      text: 'Mensagem única',
+      capturedAt: '2026-07-22T14:00:05.000Z',
+      source: 'google-meet-chat',
+    },
+  ]);
+  const captions = cleaned.entries.filter((entry) => entry.source === source);
+  assert.equal(captions.length, 1);
+  assert.equal(captions[0].text, 'um dois três quatro cinco seis sete oito nove dez');
+  assert.equal(cleaned.entries.find((entry) => entry.source === 'google-meet-chat').participantName, 'Artesanato Costa');
+  assert.ok(cleaned.removedCaptionChars > 0);
+});
+
+test('agrupa eventos anônimos repetidos ao limpar arquivo antigo', () => {
+  const cleaned = cleanRollingTranscript([
+    {
+      participantName: 'Alguém',
+      text: 'Alguém reagiu 👍',
+      capturedAt: '2026-07-22T14:00:00.000Z',
+      source: 'google-meet-event',
+    },
+    {
+      participantName: 'Alguém',
+      text: 'Alguém reagiu 👍',
+      capturedAt: '2026-07-22T14:00:06.000Z',
+      source: 'google-meet-event',
+    },
+  ]);
+  assert.equal(cleaned.entries.length, 1);
 });

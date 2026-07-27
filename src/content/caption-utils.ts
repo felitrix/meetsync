@@ -260,3 +260,195 @@ export function parseChatHeader(headerText: string, now = new Date()): ParsedCha
   name = collapseRepeatedName(name);
   return { name, capturedAt };
 }
+
+export type CleanableTranscriptEntry = {
+  id?: string;
+  participantName: string;
+  participantAvatarUrl?: string;
+  text: string;
+  capturedAt: string;
+  source: string;
+};
+
+export type TranscriptCleaningResult = {
+  entries: Array<Required<Pick<CleanableTranscriptEntry, 'id'>> & Omit<CleanableTranscriptEntry, 'id'>>;
+  originalCaptionChars: number;
+  cleanedCaptionChars: number;
+  removedCaptionChars: number;
+  originalEntries: number;
+  cleanedEntries: number;
+};
+
+type CleaningStream = {
+  name: string;
+  source: string;
+  historyText: string;
+  lastSnapshotText: string;
+  segmentStart: number;
+  currentIndex: number | null;
+  currentOpenedAt: number;
+  lastSeenAt: number;
+};
+
+const CLEANER_REATTACH_MS = 12_000;
+const CLEANER_SEGMENT_MAX = 700;
+const CLEANER_SEGMENT_AGE_MS = 25_000;
+
+function normalizeImportedName(name: string): string {
+  return collapseRepeatedName(collapseWhitespace(name).replace(/\s+(?:AM|PM)$/i, ''));
+}
+
+function safeTime(value: string): number {
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * Limpa transcrições geradas pelas versões antigas, que salvavam cada snapshot cumulativo inteiro.
+ * É pura e não altera o arquivo original: o chamador recebe uma nova lista pronta para importar.
+ */
+export function cleanRollingTranscript(
+  input: readonly CleanableTranscriptEntry[],
+): TranscriptCleaningResult {
+  const ordered = input
+    .map((entry, order) => ({ entry, order }))
+    .sort((a, b) => safeTime(a.entry.capturedAt) - safeTime(b.entry.capturedAt) || a.order - b.order);
+  const output: TranscriptCleaningResult['entries'] = [];
+  const streamsBySpeaker = new Map<string, CleaningStream[]>();
+  const recentEvents = new Map<string, number>();
+  let generatedId = 0;
+  let originalCaptionChars = 0;
+
+  const nextId = (base?: string) => {
+    generatedId++;
+    const safeBase = (base || 'legacy').slice(0, 120);
+    return `${safeBase}-clean-${generatedId}`;
+  };
+
+  const createStream = (entry: CleanableTranscriptEntry, name: string, now: number): CleaningStream => {
+    const stream: CleaningStream = {
+      name,
+      source: entry.source,
+      historyText: '',
+      lastSnapshotText: '',
+      segmentStart: 0,
+      currentIndex: null,
+      currentOpenedAt: now,
+      lastSeenAt: now,
+    };
+    const key = `${entry.source}\u0000${name}`;
+    const streams = streamsBySpeaker.get(key) ?? [];
+    streams.push(stream);
+    streamsBySpeaker.set(key, streams.slice(-40));
+    return stream;
+  };
+
+  const findStream = (entry: CleanableTranscriptEntry, name: string, now: number) => {
+    const key = `${entry.source}\u0000${name}`;
+    const streams = streamsBySpeaker.get(key) ?? [];
+    for (let i = streams.length - 1; i >= 0; i--) {
+      const candidate = streams[i]!;
+      const probe = mergeRollingCaption(candidate.historyText, candidate.lastSnapshotText, entry.text);
+      if (probe.kind === 'new') continue;
+      const recent = now - candidate.lastSeenAt <= CLEANER_REATTACH_MS;
+      const strongOverlap = candidate.lastSnapshotText.length >= 80 && entry.text.length >= 80;
+      if (recent || strongOverlap) return candidate;
+    }
+    return undefined;
+  };
+
+  const emitStream = (stream: CleaningStream, entry: CleanableTranscriptEntry, now: number) => {
+    while (stream.segmentStart < stream.historyText.length) {
+      while (stream.historyText[stream.segmentStart] === ' ') stream.segmentStart++;
+      const pending = stream.historyText.slice(stream.segmentStart);
+      if (!pending) break;
+      const cut = findCaptionSegmentCut(pending, 520, CLEANER_SEGMENT_MAX);
+      const text = pending.slice(0, cut).trim();
+      if (!text) break;
+
+      if (stream.currentIndex == null) {
+        stream.currentIndex = output.length;
+        stream.currentOpenedAt = now;
+        output.push({
+          id: nextId(entry.id),
+          participantName: stream.name,
+          participantAvatarUrl: entry.participantAvatarUrl,
+          text,
+          capturedAt: entry.capturedAt,
+          source: stream.source,
+        });
+      } else {
+        const current = output[stream.currentIndex]!;
+        current.text = text;
+        if (entry.participantAvatarUrl) current.participantAvatarUrl = entry.participantAvatarUrl;
+      }
+
+      if (cut < pending.length) {
+        stream.segmentStart += cut;
+        stream.currentIndex = null;
+        continue;
+      }
+      break;
+    }
+
+    if (
+      stream.currentIndex != null &&
+      output[stream.currentIndex]!.text.length >= 60 &&
+      now - stream.currentOpenedAt >= CLEANER_SEGMENT_AGE_MS
+    ) {
+      stream.segmentStart = stream.historyText.length;
+      stream.currentIndex = null;
+    }
+  };
+
+  for (const { entry } of ordered) {
+    const text = collapseWhitespace(entry.text);
+    if (!text) continue;
+    const name = normalizeImportedName(entry.participantName) || 'Participante';
+    const now = safeTime(entry.capturedAt);
+
+    if (!entry.source.endsWith('-caption')) {
+      if (entry.source.endsWith('-event')) {
+        const eventKey = `${entry.source}\u0000${name}\u0000${normalizeText(text)}`;
+        const previous = recentEvents.get(eventKey);
+        if (previous != null && now - previous <= 10_000) continue;
+        recentEvents.set(eventKey, now);
+      }
+      output.push({
+        id: entry.id || nextId(),
+        participantName: name,
+        participantAvatarUrl: entry.participantAvatarUrl,
+        text,
+        capturedAt: entry.capturedAt,
+        source: entry.source,
+      });
+      continue;
+    }
+
+    originalCaptionChars += text.length;
+    let stream = findStream(entry, name, now) ?? createStream(entry, name, now);
+    let merged = mergeRollingCaption(stream.historyText, stream.lastSnapshotText, text);
+    if (merged.kind === 'new') {
+      stream = createStream(entry, name, now);
+      merged = mergeRollingCaption('', '', text);
+    }
+    stream.historyText = merged.history;
+    stream.lastSnapshotText = text;
+    stream.lastSeenAt = now;
+    stream.segmentStart = Math.min(stream.segmentStart, stream.historyText.length);
+    emitStream(stream, entry, now);
+  }
+
+  output.sort((a, b) => safeTime(a.capturedAt) - safeTime(b.capturedAt));
+  const cleanedCaptionChars = output
+    .filter((entry) => entry.source.endsWith('-caption'))
+    .reduce((sum, entry) => sum + entry.text.length, 0);
+  return {
+    entries: output,
+    originalCaptionChars,
+    cleanedCaptionChars,
+    removedCaptionChars: Math.max(0, originalCaptionChars - cleanedCaptionChars),
+    originalEntries: input.length,
+    cleanedEntries: output.length,
+  };
+}

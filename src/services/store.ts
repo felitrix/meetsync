@@ -41,6 +41,14 @@ export type AlertsState = {
   unread: number;
 };
 
+/** Diagnóstico local da captura. Não é persistido nem enviado para fora do navegador. */
+export type CaptureHealth = {
+  lastCaptionAt?: string;
+  reconnectCount: number;
+  observerAttached: boolean;
+  silent: boolean;
+};
+
 export type AppState = {
   inMeeting: boolean;
   /** true depois que a reunião terminou, mas a transcrição ainda está visível para revisar/baixar. */
@@ -53,6 +61,7 @@ export type AppState = {
   ollama: OllamaState;
   ui: UiState;
   alerts: AlertsState;
+  captureHealth: CaptureHealth;
 };
 
 type Listener = (state: AppState) => void;
@@ -83,6 +92,7 @@ class Store {
     ollama: { reachable: false, models: [], testing: false },
     ui: { expanded: false, activeTab: 'transcript' },
     alerts: { active: null, recent: [], unread: 0 },
+    captureHealth: { reconnectCount: 0, observerAttached: false, silent: false },
   };
 
   private listeners = new Set<Listener>();
@@ -147,6 +157,7 @@ class Store {
     };
     this.state.inMeeting = true;
     this.state.ended = false;
+    this.state.captureHealth = { reconnectCount: 0, observerAttached: false, silent: false };
     this.emit();
   }
 
@@ -156,6 +167,7 @@ class Store {
     this.state.ended = true;
     this.state.captionsOn = false;
     this.state.captureStatus = 'idle';
+    this.state.captureHealth = { ...this.state.captureHealth, observerAttached: false, silent: false };
     this.state.ui.expanded = true; // abre o painel para o usuário ver/baixar
     this.emit();
   }
@@ -174,6 +186,7 @@ class Store {
     this.state.ended = false;
     this.state.captionsOn = false;
     this.state.captureStatus = 'idle';
+    this.state.captureHealth = { reconnectCount: 0, observerAttached: false, silent: false };
     this.state.ui.summaryText = undefined;
     this.emit();
   }
@@ -191,12 +204,38 @@ class Store {
   }
 
   setCaptureStatus(status: CaptureStatus) {
+    if (this.state.captureStatus === status) return;
     this.state.captureStatus = status;
     this.emit();
   }
 
   setCaptionsOn(on: boolean) {
+    if (this.state.captionsOn === on) return;
     this.state.captionsOn = on;
+    this.emit();
+  }
+
+  noteCaptionActivity(iso: string) {
+    this.state.captureHealth = {
+      ...this.state.captureHealth,
+      lastCaptionAt: iso,
+      observerAttached: true,
+      silent: false,
+    };
+    this.emit();
+  }
+
+  noteCaptionObserver(attached: boolean, reconnected = false) {
+    const current = this.state.captureHealth;
+    const reconnectCount = current.reconnectCount + (reconnected ? 1 : 0);
+    if (current.observerAttached === attached && reconnectCount === current.reconnectCount) return;
+    this.state.captureHealth = { ...current, observerAttached: attached, reconnectCount };
+    this.emit();
+  }
+
+  setCaptionSilent(silent: boolean) {
+    if (this.state.captureHealth.silent === silent) return;
+    this.state.captureHealth = { ...this.state.captureHealth, silent };
     this.emit();
   }
 

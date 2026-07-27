@@ -87,6 +87,15 @@ export const es: Messages = {
     processingEllipsis: 'Procesando…',
     errorProcessing: 'Error al procesar la IA',
     capturePaused: 'Captura en pausa',
+    silentShort: 'Sin subtítulo',
+    activeHealth: (reconnects: number) => reconnects > 0
+      ? `Captura activa · ${reconnects} ${reconnects === 1 ? 'reconexión' : 'reconexiones'}`
+      : 'Captura activa',
+    silentHealth: (time?: string) => time
+      ? `Sin subtítulo nuevo desde ${time}`
+      : 'Esperando el primer subtítulo',
+    healthTitle: (time: string | undefined, reconnects: number) =>
+      `Último subtítulo: ${time ?? 'aún no recibido'} · Reconexiones: ${reconnects}`,
   },
 
   tail: {
@@ -155,6 +164,16 @@ export const es: Messages = {
     exportOptions: 'Opciones de exportación',
     language: 'Idioma',
     languageDesc: 'Idioma de la interfaz, las exportaciones y las respuestas de la IA.',
+    historyRetention: 'Retención del historial',
+    historyRetentionDesc: 'Conserva las reuniones no favoritas más recientes. Los favoritos nunca se eliminan automáticamente.',
+    retentionOption: (n: number) => `${n} reuniones`,
+    retentionConfirmTitle: '¿Reducir el historial?',
+    retentionConfirmMsg: (removed: number, limit: number) =>
+      `${removed} ${removed === 1 ? 'reunión antigua se eliminará' : 'reuniones antiguas se eliminarán'} para aplicar el límite de ${limit}. Los favoritos se conservarán.`,
+    retentionConfirmYes: 'Aplicar y eliminar',
+    retentionConfirmNo: 'Cancelar',
+    retentionApplied: (removed: number) =>
+      `${removed} ${removed === 1 ? 'reunión antigua eliminada' : 'reuniones antiguas eliminadas'}. Los favoritos se conservaron.`,
     yourName: 'Tu nombre',
     yourNamePlaceholder: 'ej.: Diego Araujo',
     yourNameDesc: 'Aparece en lugar de “Tú” en la transcripción, las exportaciones y los resúmenes.',
@@ -339,10 +358,11 @@ export const es: Messages = {
     generateAtasHintNoAi: (n: number) => `${n} ${n === 1 ? 'reunión sin acta' : 'reuniones sin acta'} — ¿generar sin IA?`,
     generatingAtasNoAi: (done: number, total: number) => `Generando actas sin IA… ${done}/${total}`,
     genAtaBusyNoAi: 'Generando acta sin IA…',
-    importAction: 'Importar reunión',
-    importActionSub: 'Carga un backup exportado de otro computador',
+    importAction: 'Importar o limpiar JSON',
+    importActionSub: 'Carga backups y limpia transcripciones exportadas por versiones anteriores',
     importOk: '¡Reunión importada con éxito!',
-    importError: 'Archivo inválido. Selecciona un backup exportado por MeetSync.',
+    importCleanOk: (percent: number) => `Transcripción antigua importada y limpiada — ${percent}% de repetición eliminada. El archivo original no fue modificado.`,
+    importError: 'Archivo inválido. Selecciona un backup o JSON de transcripción exportado por MeetSync.',
     exportBackup: 'Exportar reunión',
     exportBackupSub: 'Genera un archivo para importar en otro computador, con todo funcionando',
     deleteConfirmTitle: '¿Eliminar esta reunión?',

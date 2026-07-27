@@ -12,7 +12,9 @@ npm run zip        # package dist/ into meetsync-<version>.zip (requires built d
 npm run package    # build + zip
 ```
 
-There is no test suite. `npm run build` is the gate: it must pass `tsc --noEmit` (strict) before bundling.
+`npm test` covers caption reconciliation, legacy transcript cleaning, chat-header normalization, and
+history-retention behavior. `npm run build` is the final gate: it must pass `tsc --noEmit` (strict)
+before bundling.
 
 Loading the extension: `chrome://extensions` → enable Developer mode → "Load unpacked" → select `dist/`.
 
@@ -49,8 +51,9 @@ Three Chrome execution contexts, wired in `src/content/content-script.ts` (the b
 
 `src/services/store.ts` is the single source of truth: a hand-rolled pub/sub `store` (no framework).
 Capture modules and async actions write to it; `Panel` subscribes in `panel.ts` and patches the DOM. The
-meeting transcript lives **in memory only**; only `UserSettings` is persisted, via `storage-service.ts`
-→ `chrome.storage.local`.
+meeting transcript lives in memory during capture and is auto-saved to local meeting history, via
+`storage-service.ts` → `chrome.storage.local`. Retention is configurable (10/20/40 non-favorites);
+favorites are preserved.
 
 `MeetDetector` (`meet-detector.ts`) fires `onJoined`/`onLeft` (patches `history.pushState` for the SPA +
 MutationObserver + poll). On join → `store.startSession` + `CaptionCapture.start()`/`ChatCapture.start()`
@@ -73,6 +76,10 @@ slides a cumulative caption window. Long monologues are split into readable entr
 detached/recreated DOM rows can reconnect to a matching speaker stream. Chat dedups by
 `data-message-id`; its header parser handles both 24-hour and AM/PM timestamps without leaking `AM`
 into participant names.
+
+Capture health is tracked in the store: last caption activity, observer attachment, automatic
+reconnections, and a neutral silence warning after 30 seconds without a new caption. The pure
+`cleanRollingTranscript` utility also repairs legacy JSON exports before importing a cleaned copy.
 
 ### Mention alerts (toolbar action + notifications)
 

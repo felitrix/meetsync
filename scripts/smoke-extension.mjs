@@ -88,7 +88,7 @@ async function findMeetSyncTarget(base, timeoutMs = 15_000) {
       try {
         const raw = await evaluate(target, 'JSON.stringify(chrome.runtime.getManifest())');
         const manifest = JSON.parse(raw);
-        if (manifest.version === '0.4.6' && manifest.manifest_version === 3) {
+        if (manifest.version === '0.4.7' && manifest.manifest_version === 3) {
           return { target, manifest };
         }
       } catch {

@@ -41,6 +41,7 @@ const MAX_SEGMENT_CHARS = 700;
 const MAX_SEGMENT_AGE_MS = 25_000;
 const MIN_TIMED_SEGMENT_CHARS = 60;
 const STREAM_REATTACH_MS = 12_000;
+const CAPTURE_SILENCE_WARNING_MS = 30_000;
 const MIN_TEXT_LEN = 1;
 
 type OpenSegment = {
@@ -128,6 +129,7 @@ export class CaptionCapture {
   private rowToStream = new WeakMap<Element, CaptionStream>();
   private streamsBySpeaker = new Map<string, CaptionStream[]>();
   private running = false;
+  private everAttached = false;
 
   start() {
     if (this.running) return;
@@ -143,6 +145,8 @@ export class CaptionCapture {
     if (this.stateTimer !== null) clearInterval(this.stateTimer);
     this.stateTimer = null;
     this.container = null;
+    this.everAttached = false;
+    store.noteCaptionObserver(false);
     this.rowToStream = new WeakMap();
     this.streamsBySpeaker.clear();
   }
@@ -184,6 +188,9 @@ export class CaptionCapture {
       if (this.container !== container) {
         this.detachObserver();
         this.container = container;
+        const reconnected = this.everAttached;
+        this.everAttached = true;
+        store.noteCaptionObserver(true, reconnected);
         this.attachObserver(container);
       }
       if (store.get().inMeeting) {
@@ -191,9 +198,16 @@ export class CaptionCapture {
         if (store.get().captureStatus !== 'processing') store.setCaptureStatus('capturing');
       }
       this.harvest(); // leitura inicial
+      const health = store.get().captureHealth;
+      const reference = health.lastCaptionAt ?? store.get().session.captureStartedAt;
+      if (reference) {
+        store.setCaptionSilent(Date.now() - new Date(reference).getTime() >= CAPTURE_SILENCE_WARNING_MS);
+      }
     } else {
       this.detachObserver();
       this.container = null;
+      store.noteCaptionObserver(false);
+      store.setCaptionSilent(false);
       // Fecha falas abertas ao desligar legendas (mantém continuidade ao religar — RF-041).
       this.rowToStream = new WeakMap();
       if (store.get().inMeeting && store.get().captureStatus !== 'processing') {
@@ -360,6 +374,7 @@ export class CaptionCapture {
       capturedAt: segment.capturedAt,
       source: 'google-meet-caption',
     };
+    store.noteCaptionActivity(new Date(now).toISOString());
     store.upsertEntry(entry);
   }
 

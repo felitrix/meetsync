@@ -131,6 +131,28 @@ Capturar, organizar y exportar la transcripción (subtítulos y chat) de reunion
 
 ---
 
+# Novidades / What's new / Novedades — v0.4.7
+
+## 🇧🇷 Português
+**Diagnóstico, limpeza e controle do histórico**
+- O painel agora mostra a saúde da captura: última legenda recebida, reconexões automáticas e um aviso neutro quando o Meet fica sem entregar novas legendas.
+- Novo importador/limpador de `.json` antigos: remove repetições cumulativas, normaliza eventos e salva uma cópia limpa sem alterar o arquivo original.
+- Retenção do histórico configurável em 10, 20 ou 40 reuniões não favoritas; reuniões favoritas são sempre preservadas.
+
+## 🇺🇸 English
+**Capture diagnostics, cleanup, and history control**
+- The panel now shows capture health: last caption activity, automatic reconnects, and a neutral warning when Meet stops delivering new captions.
+- New legacy `.json` importer/cleaner removes cumulative repeats, normalizes events, and saves a cleaned copy without changing the original file.
+- History retention is configurable at 10, 20, or 40 non-favorite meetings; favorite meetings are always preserved.
+
+## 🇪🇸 Español
+**Diagnóstico, limpieza y control del historial**
+- El panel ahora muestra la salud de la captura: última actividad de subtítulos, reconexiones automáticas y un aviso neutro cuando Meet deja de entregar subtítulos nuevos.
+- Nuevo importador/limpiador de `.json` antiguos: elimina repeticiones acumulativas, normaliza eventos y guarda una copia limpia sin modificar el archivo original.
+- Retención configurable de 10, 20 o 40 reuniones no favoritas; las reuniones favoritas siempre se conservan.
+
+---
+
 # Novidades / What's new / Novedades — v0.4.6
 
 ## 🇧🇷 Português

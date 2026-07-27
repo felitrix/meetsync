@@ -18,6 +18,7 @@ Em publicação na **Chrome Web Store**. Política de privacidade:
 ### Captura
 - Liga as legendas do Meet **automaticamente** e captura a transcrição enquanto estiverem ligadas (pausa/retoma com elas).
 - Reconcilia as janelas cumulativas/deslizantes do Meet para evitar blocos repetidos e divide falas longas em trechos legíveis com horário progressivo.
+- Mostra a saúde da captura: horário da última legenda, reconexões automáticas e aviso quando o Meet deixa de entregar novas legendas.
 - Histórico em **chat**: nome, horário e avatar colorido por participante; as mensagens do **chat de texto** do Meet entram **intercaladas em ordem cronológica** (com selo "chat") e **links viram clicáveis**.
 - **Indicador de captura**: ponto **vermelho REC** pulsante (capturando) / **terracota** (pausado).
 
@@ -30,10 +31,11 @@ Em publicação na **Chrome Web Store**. Política de privacidade:
 ### Histórico de reuniões
 - **Biblioteca local** de todas as reuniões transcritas (ícone de relógio no header do painel).
 - Lista com **busca** e cards (data, duração, participantes, prévia da 1ª fala, nº de linhas, com/sem ata); **detalhe** com métricas, prévia transcrição/resumo e ações (baixar `.txt`/ata, favoritar, excluir).
+- Importa exports `.json` antigos e cria uma cópia limpa no histórico, removendo repetições cumulativas sem alterar o arquivo original.
 - Acessível também pelo **ícone da toolbar** — dentro ou fora do Meet.
 
 ### Não perder a reunião
-- **Auto-salva** a transcrição localmente durante e ao encerrar a reunião (até 40 no histórico).
+- **Auto-salva** a transcrição localmente durante e ao encerrar a reunião; retenção configurável de 10, 20 ou 40 reuniões não favoritas, preservando sempre as favoritas.
 - **Recuperação pelo ícone da toolbar**: se o Meet redirecionar/fechar a aba, o popup mostra **"Última reunião salva → Baixar .txt"** (com IA quando configurada).
 - Bloqueia a navegação enquanto o **download com IA** ainda processa (o "voltar à tela inicial" do Meet não interrompe mais o download).
 - Re-renders/quedas transientes do Meet **não zeram** mais a transcrição.
@@ -116,7 +118,7 @@ OLLAMA_ORIGINS="chrome-extension://*" ollama serve
 - Mensagens internas e importações de backup são validadas e limitadas antes do processamento.
 - O Ollama é aceito somente em `localhost` ou `127.0.0.1`; não há acesso a servidores remotos.
 - Em janela anônima, a captura funciona em memória e pode ser exportada, mas não cria histórico persistente.
-- O histórico normal fica em `chrome.storage.local` (até 40 reuniões) até ser excluído pelo usuário;
+- O histórico normal fica em `chrome.storage.local`; o limite configurável de 10, 20 ou 40 vale para reuniões não favoritas, enquanto favoritas são preservadas até exclusão manual;
   esse armazenamento local do Chrome não é criptografia de ponta a ponta.
 
 ---

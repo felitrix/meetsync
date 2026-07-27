@@ -87,6 +87,15 @@ export const en: Messages = {
     processingEllipsis: 'Processing…',
     errorProcessing: 'Error processing AI',
     capturePaused: 'Capture paused',
+    silentShort: 'No caption',
+    activeHealth: (reconnects: number) => reconnects > 0
+      ? `Capture active · ${reconnects} ${reconnects === 1 ? 'reconnection' : 'reconnections'}`
+      : 'Capture active',
+    silentHealth: (time?: string) => time
+      ? `No new caption since ${time}`
+      : 'Waiting for the first caption',
+    healthTitle: (time: string | undefined, reconnects: number) =>
+      `Last caption: ${time ?? 'not received yet'} · Reconnections: ${reconnects}`,
   },
 
   tail: {
@@ -155,6 +164,16 @@ export const en: Messages = {
     exportOptions: 'Export options',
     language: 'Language',
     languageDesc: 'Language of the interface, exports and AI responses.',
+    historyRetention: 'History retention',
+    historyRetentionDesc: 'Keeps the most recent non-favorite meetings. Favorites are never removed automatically.',
+    retentionOption: (n: number) => `${n} meetings`,
+    retentionConfirmTitle: 'Reduce history?',
+    retentionConfirmMsg: (removed: number, limit: number) =>
+      `${removed} old ${removed === 1 ? 'meeting will' : 'meetings will'} be deleted to apply the ${limit}-meeting limit. Favorites will be kept.`,
+    retentionConfirmYes: 'Apply and delete',
+    retentionConfirmNo: 'Cancel',
+    retentionApplied: (removed: number) =>
+      `${removed} old ${removed === 1 ? 'meeting removed' : 'meetings removed'}. Favorites were kept.`,
     yourName: 'Your name',
     yourNamePlaceholder: 'e.g.: Diego Araujo',
     yourNameDesc: 'Shown instead of “You” in the transcript, exports and summaries.',
@@ -339,10 +358,11 @@ export const en: Messages = {
     generateAtasHintNoAi: (n: number) => `${n} ${n === 1 ? 'meeting' : 'meetings'} without minutes — generate without AI?`,
     generatingAtasNoAi: (done: number, total: number) => `Generating minutes without AI… ${done}/${total}`,
     genAtaBusyNoAi: 'Generating minutes without AI…',
-    importAction: 'Import meeting',
-    importActionSub: 'Loads a backup exported from another computer',
+    importAction: 'Import or clean JSON',
+    importActionSub: 'Loads backups and cleans transcripts exported by older versions',
     importOk: 'Meeting imported successfully!',
-    importError: 'Invalid file. Select a backup exported by MeetSync.',
+    importCleanOk: (percent: number) => `Old transcript imported and cleaned — ${percent}% repetition removed. The original file was not changed.`,
+    importError: 'Invalid file. Select a MeetSync backup or exported transcript JSON.',
     exportBackup: 'Export meeting',
     exportBackupSub: 'Generates a file to import on another computer, with everything working',
     deleteConfirmTitle: 'Delete this meeting?',

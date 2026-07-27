@@ -3,14 +3,25 @@
 // snapshot da última reunião como rede de segurança (o Meet redireciona/fecha a aba ao encerrar
 // — sem isto a transcrição se perde antes do download). Tudo fica só local, nada sai do navegador.
 
-import { DEFAULT_SETTINGS, type MeetingProvider, type MeetingSession, type UserSettings } from '@/types';
+import {
+  DEFAULT_SETTINGS,
+  type MeetingProvider,
+  type MeetingSession,
+  type TranscriptEntry,
+  type UserSettings,
+} from '@/types';
 import { t } from '@/i18n';
+import { cleanRollingTranscript, type CleanableTranscriptEntry } from '@/content/caption-utils';
+import {
+  normalizeHistoryRetention,
+  selectHistoryIdsToKeep,
+  type HistoryRetentionCount,
+} from './retention-utils';
 
 const SETTINGS_KEY = 'meetsync:settings';
 const LAST_MEETING_KEY = 'meetsync:lastMeeting'; // legado (0.3.0) — migrado para o histórico
 const HISTORY_KEY = 'meetsync:history'; // índice leve (metadados) para a lista
 const MEETING_PREFIX = 'meetsync:meeting:'; // dados completos por reunião
-const HISTORY_CAP = 40; // máximo de reuniões guardadas (poda as mais antigas)
 const OPEN_HISTORY_KEY = 'meetsync:openHistory'; // sinaliza pra aba do Meet abrir o histórico ao carregar
 
 /** Pede que a próxima aba do Meet a carregar abra o histórico (usado pelo popup fora do Meet). */
@@ -92,7 +103,9 @@ export async function loadSettings(): Promise<UserSettings> {
   try {
     const res = await chrome.storage.local.get(SETTINGS_KEY);
     const stored = res[SETTINGS_KEY] as Partial<UserSettings> | undefined;
-    return { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
+    const settings = { ...DEFAULT_SETTINGS, ...(stored ?? {}) };
+    settings.historyRetentionCount = normalizeHistoryRetention(settings.historyRetentionCount);
+    return settings;
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -130,16 +143,20 @@ export async function saveMeeting(session: MeetingSession, summaryText?: string)
 
   let index = [meta, ...current.filter((m) => m.id !== session.id)];
 
-  // Poda: remove as mais antigas além do limite, apagando também seus dados completos.
-  const pruned = index.slice(HISTORY_CAP);
-  index = index.slice(0, HISTORY_CAP);
+  // Poda configurável: favoritos são sempre preservados; limita apenas os não favoritos.
+  const retention = (await loadSettings()).historyRetentionCount;
+  const keepIds = selectHistoryIdsToKeep(index, retention);
+  const pruned = index.filter((item) => !keepIds.has(item.id));
+  index = index.filter((item) => keepIds.has(item.id));
 
   try {
     await chrome.storage.local.set({ [HISTORY_KEY]: index, [MEETING_PREFIX + session.id]: full });
     if (pruned.length) await chrome.storage.local.remove(pruned.map((m) => MEETING_PREFIX + m.id));
   } catch {
     // Provável estouro de quota: tenta liberar a reunião mais antiga e salvar de novo, uma vez.
-    const oldest = index[index.length - 1];
+    const oldest =
+      [...index].reverse().find((item) => !item.starred && item.id !== session.id) ??
+      [...index].reverse().find((item) => item.id !== session.id);
     if (oldest && oldest.id !== session.id) {
       try {
         await chrome.storage.local.remove(MEETING_PREFIX + oldest.id);
@@ -149,6 +166,21 @@ export async function saveMeeting(session: MeetingSession, summaryText?: string)
       }
     }
   }
+}
+
+/** Aplica imediatamente a nova retenção e retorna quantas reuniões não favoritas foram removidas. */
+export async function applyHistoryRetention(
+  requestedLimit: unknown,
+): Promise<{ limit: HistoryRetentionCount; removed: number }> {
+  const limit = normalizeHistoryRetention(requestedLimit);
+  const index = await readIndex();
+  const keepIds = selectHistoryIdsToKeep(index, limit);
+  const kept = index.filter((item) => keepIds.has(item.id));
+  const pruned = index.filter((item) => !keepIds.has(item.id));
+  if (!pruned.length) return { limit, removed: 0 };
+  await chrome.storage.local.set({ [HISTORY_KEY]: kept });
+  await chrome.storage.local.remove(pruned.map((item) => MEETING_PREFIX + item.id));
+  return { limit, removed: pruned.length };
 }
 
 /** Índice do histórico (metadados), mais novo primeiro. Migra o formato legado 0.3.0 se preciso. */
@@ -259,6 +291,17 @@ export type MeetingBackup = {
   saved: SavedMeeting;
 };
 
+export type ImportMeetingResult =
+  | { ok: true; kind: 'backup'; removedCaptionChars: 0 }
+  | {
+      ok: true;
+      kind: 'cleaned-export';
+      removedCaptionChars: number;
+      originalCaptionChars: number;
+      cleanedCaptionChars: number;
+    }
+  | { ok: false; error: 'invalid_json' | 'invalid_schema' };
+
 /** Monta o JSON de backup de uma reunião — dá pra importar em outro dispositivo (com
  *  transcrição, resumo e todas as funcionalidades funcionando normalmente, como se tivesse
  *  sido capturada ali). Distinto do .json de export-txt (esse é pra automações/IA). */
@@ -351,6 +394,104 @@ export async function importMeetingBackup(json: string): Promise<{ ok: true } | 
   await saveMeeting(session, saved.summaryText as string | undefined);
   if (data.starred) await setMeetingStarred(session.id, true);
   return { ok: true };
+}
+
+/**
+ * Aceita tanto o backup completo quanto o JSON de exportação das versões antigas. No segundo
+ * caso, reconcilia as janelas cumulativas antes de criar uma NOVA reunião no histórico; o arquivo
+ * original permanece intacto no disco.
+ */
+export async function importMeetingFile(json: string): Promise<ImportMeetingResult> {
+  if (new Blob([json]).size > MAX_BACKUP_BYTES) return { ok: false, error: 'invalid_schema' };
+  let data: unknown;
+  try {
+    data = JSON.parse(json);
+  } catch {
+    return { ok: false, error: 'invalid_json' };
+  }
+
+  if (isRecord(data) && data.schema === BACKUP_SCHEMA) {
+    const imported = await importMeetingBackup(json);
+    return imported.ok
+      ? { ok: true, kind: 'backup', removedCaptionChars: 0 }
+      : imported;
+  }
+
+  if (
+    !isRecord(data) ||
+    !Array.isArray(data.transcript) ||
+    data.transcript.length === 0 ||
+    data.transcript.length > MAX_BACKUP_ENTRIES ||
+    (data.meetingTitle !== null && data.meetingTitle !== undefined && !isBoundedString(data.meetingTitle, 2_000)) ||
+    !isBoundedString(data.meetingUrl, 2_048) ||
+    !isBoundedString(data.meetingCode, 300) ||
+    (data.captureStartedAt !== null && !isOptionalIso(data.captureStartedAt)) ||
+    (data.captureEndedAt !== null && !isOptionalIso(data.captureEndedAt)) ||
+    (data.summary !== null && data.summary !== undefined && !isBoundedString(data.summary, 2_000_000))
+  ) {
+    return { ok: false, error: 'invalid_schema' };
+  }
+
+  const rawEntries: CleanableTranscriptEntry[] = [];
+  for (let i = 0; i < data.transcript.length; i++) {
+    const raw = data.transcript[i];
+    if (
+      !isRecord(raw) ||
+      !isBoundedString(raw.speaker, 500, false) ||
+      !isBoundedString(raw.text, 100_000, false) ||
+      !isBoundedString(raw.capturedAt, 64, false) ||
+      !Number.isFinite(Date.parse(raw.capturedAt)) ||
+      typeof raw.source !== 'string' ||
+      !TRANSCRIPT_SOURCES.has(raw.source)
+    ) {
+      return { ok: false, error: 'invalid_schema' };
+    }
+    rawEntries.push({
+      id: `legacy-${i + 1}`,
+      participantName: raw.speaker,
+      text: raw.text,
+      capturedAt: raw.capturedAt,
+      source: raw.source,
+    });
+  }
+
+  const cleaned = cleanRollingTranscript(rawEntries);
+  if (!cleaned.entries.length) return { ok: false, error: 'invalid_schema' };
+  const provider: MeetingProvider =
+    data.source === 'microsoft-teams' ||
+    cleaned.entries.some((entry) => entry.source.startsWith('microsoft-teams-'))
+      ? 'microsoft-teams'
+      : 'google-meet';
+  const participantNames = new Set<string>();
+  if (Array.isArray(data.participants) && data.participants.length <= 2_000) {
+    for (const participant of data.participants) {
+      if (!isBoundedString(participant, 500, false)) return { ok: false, error: 'invalid_schema' };
+      participantNames.add(participant);
+    }
+  }
+  for (const entry of cleaned.entries) {
+    if (!entry.source.endsWith('-event')) participantNames.add(entry.participantName);
+  }
+
+  const session: MeetingSession = {
+    id: crypto.randomUUID(),
+    provider,
+    meetingTitle: typeof data.meetingTitle === 'string' ? data.meetingTitle : undefined,
+    meetingUrl: data.meetingUrl,
+    meetingCode: data.meetingCode,
+    captureStartedAt: typeof data.captureStartedAt === 'string' ? data.captureStartedAt : undefined,
+    captureEndedAt: typeof data.captureEndedAt === 'string' ? data.captureEndedAt : undefined,
+    participants: [...participantNames].map((name) => ({ name })),
+    transcript: cleaned.entries as TranscriptEntry[],
+  };
+  await saveMeeting(session, typeof data.summary === 'string' ? data.summary : undefined);
+  return {
+    ok: true,
+    kind: 'cleaned-export',
+    removedCaptionChars: cleaned.removedCaptionChars,
+    originalCaptionChars: cleaned.originalCaptionChars,
+    cleanedCaptionChars: cleaned.cleanedCaptionChars,
+  };
 }
 
 export async function deleteMeeting(id: string): Promise<void> {

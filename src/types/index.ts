@@ -80,6 +80,8 @@ export type UserSettings = {
   autoOpenChat: boolean;
   /** Também baixa um .json estruturado (para agentes de IA / automações). */
   exportJson: boolean;
+  /** Quantidade máxima de reuniões não favoritas mantidas no histórico local. */
+  historyRetentionCount: number;
   /** Vocabulário do negócio: termos (empresas/produtos/siglas) injetados nos prompts de IA
    *  para corrigir palavras mal-transcritas pelo Google (ex.: "acme corp" → "AcmeCorp"). */
   vocabulary: string[];
@@ -153,6 +155,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
   summaryIntervalMin: 2,
   autoOpenChat: true,
   exportJson: false,
+  historyRetentionCount: 40,
   vocabulary: [],
   alertsArmed: false,
   alertSound: true,
