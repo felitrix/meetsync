@@ -11,7 +11,11 @@ import {
   type UserSettings,
 } from '@/types';
 import { t } from '@/i18n';
-import { cleanRollingTranscript, type CleanableTranscriptEntry } from '@/content/caption-utils';
+import {
+  analyzeCaptionReplay,
+  cleanRollingTranscript,
+  type CleanableTranscriptEntry,
+} from '@/content/caption-utils';
 import {
   normalizeHistoryRetention,
   selectHistoryIdsToKeep,
@@ -295,7 +299,7 @@ export type ImportMeetingResult =
   | { ok: true; kind: 'backup'; removedCaptionChars: 0 }
   | {
       ok: true;
-      kind: 'cleaned-export';
+      kind: 'cleaned-export' | 'cleaned-backup';
       removedCaptionChars: number;
       originalCaptionChars: number;
       cleanedCaptionChars: number;
@@ -365,6 +369,32 @@ function isValidImportedSession(value: unknown): value is MeetingSession {
   );
 }
 
+function validateMeetingBackupData(data: unknown): MeetingBackup | null {
+  if (
+    !isRecord(data) ||
+    data.schema !== BACKUP_SCHEMA ||
+    data.schemaVersion !== BACKUP_SCHEMA_VERSION ||
+    typeof data.starred !== 'boolean' ||
+    !isRecord(data.saved) ||
+    !isValidImportedSession(data.saved.session) ||
+    !isBoundedString(data.saved.savedAt, 64, false) ||
+    !Number.isFinite(Date.parse(data.saved.savedAt)) ||
+    (data.saved.summaryText !== undefined && !isBoundedString(data.saved.summaryText, 2_000_000))
+  ) {
+    return null;
+  }
+  return data as unknown as MeetingBackup;
+}
+
+async function persistMeetingBackup(backup: MeetingBackup): Promise<void> {
+  const session = {
+    ...backup.saved.session,
+    provider: backup.saved.session.provider ?? 'google-meet',
+  };
+  await saveMeeting(session, backup.saved.summaryText);
+  if (backup.starred) await setMeetingStarred(session.id, true);
+}
+
 /** Importa um backup gerado por buildMeetingBackup: grava a reunião no histórico deste
  *  dispositivo (upsert por session.id — reimportar o mesmo arquivo atualiza, não duplica). */
 export async function importMeetingBackup(json: string): Promise<{ ok: true } | { ok: false; error: 'invalid_json' | 'invalid_schema' }> {
@@ -375,24 +405,9 @@ export async function importMeetingBackup(json: string): Promise<{ ok: true } | 
   } catch {
     return { ok: false, error: 'invalid_json' };
   }
-  if (!isRecord(data) || data.schema !== BACKUP_SCHEMA || data.schemaVersion !== BACKUP_SCHEMA_VERSION) {
-    return { ok: false, error: 'invalid_schema' };
-  }
-  const saved = data.saved;
-  if (
-    typeof data.starred !== 'boolean' ||
-    !isRecord(saved) ||
-    !isValidImportedSession(saved.session) ||
-    !isBoundedString(saved.savedAt, 64, false) ||
-    !Number.isFinite(Date.parse(saved.savedAt)) ||
-    (saved.summaryText !== undefined && !isBoundedString(saved.summaryText, 2_000_000))
-  ) {
-    return { ok: false, error: 'invalid_schema' };
-  }
-  const session = saved.session;
-  if (!session.provider) session.provider = 'google-meet';
-  await saveMeeting(session, saved.summaryText as string | undefined);
-  if (data.starred) await setMeetingStarred(session.id, true);
+  const backup = validateMeetingBackupData(data);
+  if (!backup) return { ok: false, error: 'invalid_schema' };
+  await persistMeetingBackup(backup);
   return { ok: true };
 }
 
@@ -411,10 +426,31 @@ export async function importMeetingFile(json: string): Promise<ImportMeetingResu
   }
 
   if (isRecord(data) && data.schema === BACKUP_SCHEMA) {
-    const imported = await importMeetingBackup(json);
-    return imported.ok
-      ? { ok: true, kind: 'backup', removedCaptionChars: 0 }
-      : imported;
+    const backup = validateMeetingBackupData(data);
+    if (!backup) return { ok: false, error: 'invalid_schema' };
+    const replay = analyzeCaptionReplay(backup.saved.session.transcript);
+    if (!replay.likelyReplay) {
+      await persistMeetingBackup(backup);
+      return { ok: true, kind: 'backup', removedCaptionChars: 0 };
+    }
+
+    const cleaned = cleanRollingTranscript(backup.saved.session.transcript);
+    if (!cleaned.entries.length) return { ok: false, error: 'invalid_schema' };
+    const session: MeetingSession = {
+      ...backup.saved.session,
+      id: crypto.randomUUID(),
+      provider: backup.saved.session.provider ?? 'google-meet',
+      transcript: cleaned.entries as TranscriptEntry[],
+    };
+    await saveMeeting(session, backup.saved.summaryText);
+    if (backup.starred) await setMeetingStarred(session.id, true);
+    return {
+      ok: true,
+      kind: 'cleaned-backup',
+      removedCaptionChars: cleaned.removedCaptionChars,
+      originalCaptionChars: cleaned.originalCaptionChars,
+      cleanedCaptionChars: cleaned.cleanedCaptionChars,
+    };
   }
 
   if (

@@ -361,7 +361,7 @@ export const en: Messages = {
     importAction: 'Import or clean JSON',
     importActionSub: 'Loads backups and cleans transcripts exported by older versions',
     importOk: 'Meeting imported successfully!',
-    importCleanOk: (percent: number) => `Old transcript imported and cleaned — ${percent}% repetition removed. The original file was not changed.`,
+    importCleanOk: (percent: number) => `File imported and cleaned — ${percent}% repetition removed. The original file was not changed.`,
     importError: 'Invalid file. Select a MeetSync backup or exported transcript JSON.',
     exportBackup: 'Export meeting',
     exportBackupSub: 'Generates a file to import on another computer, with everything working',
@@ -372,6 +372,7 @@ export const en: Messages = {
   },
 
   popup: {
+    settings: 'Settings',
     privacy: 'Privacy',
     about: 'About',
     help: 'Help',

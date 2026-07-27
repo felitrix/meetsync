@@ -99,6 +99,10 @@ exclusive in MV3): in a Meet tab it shows capture status + a panel toggle (via `
 is a static extension page opened on first install (`onInstalled`) and from the popup; it's an extra
 Rollup input in `vite.config.ts` (not referenced by the manifest).
 
+`src/options/` is the standalone settings page declared through `options_ui`. It must remain usable
+from any browser tab and persists directly through `storage-service.ts`; the popup gear opens it with
+`chrome.runtime.openOptionsPage()`.
+
 ### Ollama bridge (+ streaming)
 
 `src/services/ollama-client.ts` holds both sides: pure fetch functions run in the worker via

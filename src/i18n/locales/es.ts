@@ -361,7 +361,7 @@ export const es: Messages = {
     importAction: 'Importar o limpiar JSON',
     importActionSub: 'Carga backups y limpia transcripciones exportadas por versiones anteriores',
     importOk: '¡Reunión importada con éxito!',
-    importCleanOk: (percent: number) => `Transcripción antigua importada y limpiada — ${percent}% de repetición eliminada. El archivo original no fue modificado.`,
+    importCleanOk: (percent: number) => `Archivo importado y limpiado — ${percent}% de repetición eliminada. El archivo original no fue modificado.`,
     importError: 'Archivo inválido. Selecciona un backup o JSON de transcripción exportado por MeetSync.',
     exportBackup: 'Exportar reunión',
     exportBackupSub: 'Genera un archivo para importar en otro computador, con todo funcionando',
@@ -372,6 +372,7 @@ export const es: Messages = {
   },
 
   popup: {
+    settings: 'Configuración',
     privacy: 'Privacidad',
     about: 'Acerca de',
     help: 'Ayuda',

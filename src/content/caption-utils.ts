@@ -226,6 +226,114 @@ export function findCaptionSegmentCut(text: string, target = 520, maximum = 700)
   return whitespace > min ? whitespace : max;
 }
 
+export type CaptionReplayMode = 'normal' | 'resume';
+
+/**
+ * Barreira semântica contra o replay de legendas quando o Meet recria o DOM.
+ *
+ * A identidade do elemento não é estável: depois de minimizar/restaurar a janela, o Meet pode
+ * reconstruir dezenas de linhas antigas com novos nós. Guardamos impressões digitais do conteúdo
+ * já emitido para não depender do WeakMap do DOM. No modo de retomada, qualquer impressão ainda
+ * no cache é considerada replay; no fluxo normal, janelas curtas permitem que uma frase realmente
+ * repetida mais tarde continue sendo registrada.
+ */
+export class CaptionReplayGuard {
+  private readonly seen = new Map<string, number>();
+  private readonly maxEntries: number;
+
+  constructor(maxEntries = 5_000) {
+    this.maxEntries = maxEntries;
+  }
+
+  shouldBlock(
+    participantName: string,
+    text: string,
+    now = Date.now(),
+    mode: CaptionReplayMode = 'normal',
+  ): boolean {
+    const key = this.key(participantName, text);
+    if (!key) return false;
+    const previous = this.seen.get(key);
+    if (previous == null) return false;
+    if (mode === 'resume') return true;
+
+    const length = normalizeText(text).length;
+    const ttl = length >= 80 ? 120_000 : length >= 24 ? 20_000 : 4_000;
+    return now - previous <= ttl;
+  }
+
+  remember(participantName: string, text: string, now = Date.now()): void {
+    const key = this.key(participantName, text);
+    if (!key) return;
+    // Renova a posição no Map para a poda funcionar como um LRU simples.
+    this.seen.delete(key);
+    this.seen.set(key, now);
+    while (this.seen.size > this.maxEntries) {
+      const oldest = this.seen.keys().next().value as string | undefined;
+      if (oldest == null) break;
+      this.seen.delete(oldest);
+    }
+  }
+
+  reset(): void {
+    this.seen.clear();
+  }
+
+  get size(): number {
+    return this.seen.size;
+  }
+
+  private key(participantName: string, text: string): string {
+    const name = normalizeText(participantName);
+    const normalized = normalizeText(text);
+    return name && normalized ? `${name}\u0000${normalized}` : '';
+  }
+}
+
+export type CaptionReplayStats = {
+  captionEntries: number;
+  duplicateEntries: number;
+  duplicateChars: number;
+  duplicateRatio: number;
+  likelyReplay: boolean;
+};
+
+/** Detecta o padrão específico do bug de retomada: mesmo participante + mesmo texto, com IDs novos. */
+export function analyzeCaptionReplay(
+  input: readonly CleanableTranscriptEntry[],
+): CaptionReplayStats {
+  const seen = new Set<string>();
+  let captionEntries = 0;
+  let duplicateEntries = 0;
+  let duplicateChars = 0;
+
+  for (const entry of input) {
+    if (!entry.source.endsWith('-caption')) continue;
+    const name = normalizeText(entry.participantName);
+    const text = normalizeText(entry.text);
+    if (!name || !text) continue;
+    captionEntries++;
+    const key = `${name}\u0000${text}`;
+    if (seen.has(key)) {
+      duplicateEntries++;
+      duplicateChars += entry.text.length;
+    } else {
+      seen.add(key);
+    }
+  }
+
+  const duplicateRatio = captionEntries ? duplicateEntries / captionEntries : 0;
+  return {
+    captionEntries,
+    duplicateEntries,
+    duplicateChars,
+    duplicateRatio,
+    likelyReplay:
+      duplicateEntries >= 10 &&
+      (duplicateRatio >= 0.15 || duplicateChars >= 10_000),
+  };
+}
+
 function collapseRepeatedName(name: string): string {
   const words = collapseWhitespace(name).split(' ').filter(Boolean);
   if (words.length < 2 || words.length % 2 !== 0) return words.join(' ');

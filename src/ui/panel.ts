@@ -1966,7 +1966,7 @@ export class Panel {
       const text = await file.text();
       const result = await importMeetingFile(text);
       if (result.ok) {
-        if (result.kind === 'cleaned-export') {
+        if (result.kind === 'cleaned-export' || result.kind === 'cleaned-backup') {
           const percent = result.originalCaptionChars > 0
             ? Math.round((result.removedCaptionChars / result.originalCaptionChars) * 100)
             : 0;

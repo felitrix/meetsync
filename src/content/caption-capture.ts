@@ -13,7 +13,7 @@
 import { store, cryptoRandomId } from '@/services/store';
 import type { TranscriptEntry } from '@/types';
 import { avatarFromCaptionRow, resolveSelfName } from './participant-resolver';
-import { findCaptionSegmentCut, mergeRollingCaption } from './caption-utils';
+import { CaptionReplayGuard, findCaptionSegmentCut, mergeRollingCaption } from './caption-utils';
 
 // Seletores confirmados ao vivo (Meet PT-BR, jun/2026). O `jsname`/`jscontroller` são os
 // mais estáveis; as classes ofuscadas (a4cQT etc.) ficam como último fallback.
@@ -42,6 +42,7 @@ const MAX_SEGMENT_AGE_MS = 25_000;
 const MIN_TIMED_SEGMENT_CHARS = 60;
 const STREAM_REATTACH_MS = 12_000;
 const CAPTURE_SILENCE_WARNING_MS = 30_000;
+const RESUME_GUARD_MS = 20_000;
 const MIN_TEXT_LEN = 1;
 
 type OpenSegment = {
@@ -128,12 +129,22 @@ export class CaptionCapture {
   private container: Element | null = null;
   private rowToStream = new WeakMap<Element, CaptionStream>();
   private streamsBySpeaker = new Map<string, CaptionStream[]>();
+  private replayGuard = new CaptionReplayGuard();
   private running = false;
   private everAttached = false;
+  private resumeGuardUntil = 0;
+  private readonly onVisibilityChange = () => {
+    if (!this.running || document.visibilityState !== 'visible') return;
+    // Callbacks e mutações podem chegar todos de uma vez depois que a janela volta do modo
+    // minimizado. Uma única leitura controlada recupera conteúdo novo; o guard bloqueia o replay.
+    this.resumeGuardUntil = Date.now() + RESUME_GUARD_MS;
+    this.scheduleHarvest();
+  };
 
   start() {
     if (this.running) return;
     this.running = true;
+    document.addEventListener('visibilitychange', this.onVisibilityChange);
     // Verifica periodicamente o estado das legendas (ligadas/desligadas) e (re)liga o observer.
     this.stateTimer = window.setInterval(() => this.syncCaptionState(), 1000);
     this.syncCaptionState();
@@ -141,6 +152,7 @@ export class CaptionCapture {
 
   stop() {
     this.running = false;
+    document.removeEventListener('visibilitychange', this.onVisibilityChange);
     this.detachObserver();
     if (this.stateTimer !== null) clearInterval(this.stateTimer);
     this.stateTimer = null;
@@ -149,6 +161,8 @@ export class CaptionCapture {
     store.noteCaptionObserver(false);
     this.rowToStream = new WeakMap();
     this.streamsBySpeaker.clear();
+    this.replayGuard.reset();
+    this.resumeGuardUntil = 0;
   }
 
   /** Tenta ligar as legendas do Meet automaticamente (RF-036). Não desliga se já estiverem on. */
@@ -192,12 +206,12 @@ export class CaptionCapture {
         this.everAttached = true;
         store.noteCaptionObserver(true, reconnected);
         this.attachObserver(container);
+        this.harvest(); // leitura inicial apenas ao anexar/reanexar
       }
       if (store.get().inMeeting) {
         store.setCaptureStartedAt(new Date().toISOString());
         if (store.get().captureStatus !== 'processing') store.setCaptureStatus('capturing');
       }
-      this.harvest(); // leitura inicial
       const health = store.get().captureHealth;
       const reference = health.lastCaptionAt ?? store.get().session.captureStartedAt;
       if (reference) {
@@ -353,6 +367,8 @@ export class CaptionCapture {
   private upsertSegment(stream: CaptionStream, text: string, avatarUrl: string | undefined, now: number) {
     let segment = stream.currentSegment;
     if (!segment) {
+      const mode = now <= this.resumeGuardUntil ? 'resume' : 'normal';
+      if (this.replayGuard.shouldBlock(stream.name, text, now, mode)) return;
       segment = {
         id: cryptoRandomId(),
         capturedAt: new Date(now).toISOString(),
@@ -365,6 +381,7 @@ export class CaptionCapture {
     if (segment.emittedText === text && segment.avatarUrl === avatarUrl) return;
     segment.emittedText = text;
     segment.avatarUrl = avatarUrl;
+    this.replayGuard.remember(stream.name, text, now);
 
     const entry: TranscriptEntry = {
       id: segment.id,

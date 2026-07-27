@@ -131,6 +131,31 @@ Capturar, organizar y exportar la transcripción (subtítulos y chat) de reunion
 
 ---
 
+# Novidades / What's new / Novedades — v0.4.8
+
+## 🇧🇷 Português
+**Retomada segura e configurações em qualquer aba**
+- Corrigido o surto de legendas duplicadas ao restaurar o navegador depois de deixá-lo minimizado.
+- A retomada agora reconcilia o painel uma única vez e bloqueia conteúdo já emitido, preservando falas realmente novas.
+- Backups oficiais afetados por repetição também são detectados e importados como uma nova cópia limpa.
+- Nova página completa de configurações, acessível pela engrenagem no ícone da extensão em qualquer site.
+
+## 🇺🇸 English
+**Safe resume and settings from any tab**
+- Fixed the caption duplication burst after restoring a browser that had been minimized.
+- Resume now reconciles the panel once and blocks already emitted content while preserving genuinely new speech.
+- Official backups affected by replay are detected and imported as a new cleaned copy.
+- New full settings page, available from the extension icon on any website.
+
+## 🇪🇸 Español
+**Reanudación segura y configuración desde cualquier pestaña**
+- Corregido el exceso de subtítulos duplicados al restaurar el navegador después de minimizarlo.
+- La reanudación reconcilia el panel una sola vez y bloquea contenido ya emitido, conservando intervenciones nuevas.
+- Los backups oficiales afectados también se detectan y se importan como una copia limpia.
+- Nueva página completa de configuración accesible desde el icono de la extensión en cualquier sitio.
+
+---
+
 # Novidades / What's new / Novedades — v0.4.7
 
 ## 🇧🇷 Português

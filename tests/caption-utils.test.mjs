@@ -2,11 +2,82 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  CaptionReplayGuard,
+  analyzeCaptionReplay,
   cleanRollingTranscript,
   findCaptionSegmentCut,
   mergeRollingCaption,
   parseChatHeader,
 } from '../src/content/caption-utils.ts';
+
+test('bloqueia replay em massa depois de restaurar o navegador sem bloquear conteúdo novo', () => {
+  const guard = new CaptionReplayGuard(500);
+  const start = Date.parse('2026-07-27T15:00:00.000Z');
+  for (let i = 0; i < 120; i++) {
+    guard.remember('Participante', `Legenda histórica suficientemente longa número ${i} para representar um bloco finalizado.`, start + i);
+  }
+
+  const restoredAt = start + 6 * 60_000;
+  for (let i = 0; i < 120; i++) {
+    assert.equal(
+      guard.shouldBlock(
+        'Participante',
+        `Legenda histórica suficientemente longa número ${i} para representar um bloco finalizado.`,
+        restoredAt,
+        'resume',
+      ),
+      true,
+    );
+  }
+  assert.equal(
+    guard.shouldBlock('Participante', 'Conteúdo realmente novo falado enquanto a janela estava minimizada.', restoredAt, 'resume'),
+    false,
+  );
+});
+
+test('permite uma frase curta legítima novamente depois da janela normal de deduplicação', () => {
+  const guard = new CaptionReplayGuard();
+  const start = Date.parse('2026-07-27T15:00:00.000Z');
+  guard.remember('Ana', 'Sim', start);
+  assert.equal(guard.shouldBlock('Ana', 'sim!', start + 2_000), true);
+  assert.equal(guard.shouldBlock('Ana', 'sim!', start + 5_000), false);
+});
+
+test('mantém o cache de replay limitado', () => {
+  const guard = new CaptionReplayGuard(3);
+  for (let i = 0; i < 10; i++) guard.remember('Ana', `frase ${i}`, i);
+  assert.equal(guard.size, 3);
+});
+
+test('detecta backup com replay de legendas e IDs diferentes', () => {
+  const base = {
+    participantName: 'Ana',
+    capturedAt: '2026-07-27T15:05:00.000Z',
+    source: 'google-meet-caption',
+  };
+  const entries = Array.from({ length: 25 }, (_, index) => ({
+    ...base,
+    id: String(index),
+    text: index < 20
+      ? 'Bloco antigo repetido durante a retomada da janela.'
+      : `Uma fala realmente nova ${index}.`,
+  }));
+  const stats = analyzeCaptionReplay(entries);
+  assert.equal(stats.captionEntries, 25);
+  assert.equal(stats.duplicateEntries, 19);
+  assert.equal(stats.likelyReplay, true);
+});
+
+test('não classifica poucas repetições legítimas como surto de retomada', () => {
+  const entries = Array.from({ length: 20 }, (_, index) => ({
+    id: String(index),
+    participantName: 'Ana',
+    capturedAt: `2026-07-27T15:05:${String(index).padStart(2, '0')}.000Z`,
+    source: 'google-meet-caption',
+    text: index < 3 ? 'Tudo certo.' : `Comentário único número ${index}.`,
+  }));
+  assert.equal(analyzeCaptionReplay(entries).likelyReplay, false);
+});
 
 test('reconcilia janela deslizante sem repetir o trecho sobreposto', () => {
   const result = mergeRollingCaption(

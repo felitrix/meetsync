@@ -19,6 +19,7 @@ Em publicação na **Chrome Web Store**. Política de privacidade:
 - Liga as legendas do Meet **automaticamente** e captura a transcrição enquanto estiverem ligadas (pausa/retoma com elas).
 - Reconcilia as janelas cumulativas/deslizantes do Meet para evitar blocos repetidos e divide falas longas em trechos legíveis com horário progressivo.
 - Mostra a saúde da captura: horário da última legenda, reconexões automáticas e aviso quando o Meet deixa de entregar novas legendas.
+- Ao restaurar uma janela minimizada, faz uma ressincronização controlada e bloqueia o replay de legendas antigas recriadas pelo Meet.
 - Histórico em **chat**: nome, horário e avatar colorido por participante; as mensagens do **chat de texto** do Meet entram **intercaladas em ordem cronológica** (com selo "chat") e **links viram clicáveis**.
 - **Indicador de captura**: ponto **vermelho REC** pulsante (capturando) / **terracota** (pausado).
 
@@ -32,6 +33,7 @@ Em publicação na **Chrome Web Store**. Política de privacidade:
 - **Biblioteca local** de todas as reuniões transcritas (ícone de relógio no header do painel).
 - Lista com **busca** e cards (data, duração, participantes, prévia da 1ª fala, nº de linhas, com/sem ata); **detalhe** com métricas, prévia transcrição/resumo e ações (baixar `.txt`/ata, favoritar, excluir).
 - Importa exports `.json` antigos e cria uma cópia limpa no histórico, removendo repetições cumulativas sem alterar o arquivo original.
+- Detecta e limpa também backups oficiais afetados pelo replay de legendas.
 - Acessível também pelo **ícone da toolbar** — dentro ou fora do Meet.
 
 ### Não perder a reunião
@@ -51,6 +53,7 @@ Em publicação na **Chrome Web Store**. Política de privacidade:
 - Barra compacta + painel expandido, ambos **arrastáveis** (posição lembrada).
 - Painel com **5 abas**: Transcrição · Alertas · Resumo · Exportar · Upload (beta).
 - **Ação do ícone na toolbar**: popup contextual (status da captura no Meet / orientação fora) e página de **boas-vindas** na primeira instalação.
+- **Configurações fora da reunião**: o botão de engrenagem no popup abre uma página completa em qualquer site, com captura, exportação, histórico, Ollama, vocabulário e regras de alerta.
 
 ---
 

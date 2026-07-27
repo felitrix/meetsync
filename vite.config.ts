@@ -18,6 +18,7 @@ export default defineConfig({
       // Página de boas-vindas: não é referenciada no manifest (aberta via runtime.getURL),
       // então precisa ser declarada como entrada extra para o crxjs/Rollup empacotá-la.
       input: {
+        options: resolve(__dirname, 'src/options/options.html'),
         welcome: resolve(__dirname, 'src/welcome/welcome.html'),
       },
     },

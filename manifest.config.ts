@@ -68,4 +68,8 @@ export default defineManifest({
   content_security_policy: {
     extension_pages: "script-src 'self'; object-src 'none'; base-uri 'none'",
   },
+  options_ui: {
+    page: 'src/options/options.html',
+    open_in_tab: true,
+  },
 });

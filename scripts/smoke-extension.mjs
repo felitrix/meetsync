@@ -88,7 +88,7 @@ async function findMeetSyncTarget(base, timeoutMs = 15_000) {
       try {
         const raw = await evaluate(target, 'JSON.stringify(chrome.runtime.getManifest())');
         const manifest = JSON.parse(raw);
-        if (manifest.version === '0.4.7' && manifest.manifest_version === 3) {
+        if (manifest.version === '0.4.8' && manifest.manifest_version === 3) {
           return { target, manifest };
         }
       } catch {
@@ -129,7 +129,36 @@ child.stderr.on('data', (chunk) => {
 try {
   const base = `http://127.0.0.1:${port}`;
   await pollJson(`${base}/json/version`, (value) => Boolean(value.webSocketDebuggerUrl));
-  const { manifest } = await findMeetSyncTarget(base);
+  const { target, manifest } = await findMeetSyncTarget(base);
+  const extensionId = new URL(target.url).hostname;
+
+  const optionsUrl = `chrome-extension://${extensionId}/${manifest.options_ui.page}`;
+  await fetch(`${base}/json/new?${encodeURIComponent(optionsUrl)}`, { method: 'PUT' });
+  const optionsTargets = await pollJson(
+    `${base}/json/list`,
+    (value) => Array.isArray(value) && value.some((item) => item.url === optionsUrl),
+    15_000,
+  );
+  const optionsTarget = optionsTargets.find((item) => item.url === optionsUrl);
+  const optionsReady = await pollJson(
+    `${base}/json/list`,
+    async () => Boolean(await evaluate(optionsTarget, "document.body.dataset.optionsReady === 'true'")),
+    15_000,
+  ).catch(() => false);
+  if (!optionsReady) throw new Error('A página de configurações não ficou pronta.');
+  const optionsPersistence = await evaluate(
+    optionsTarget,
+    `(async () => {
+      const input = document.querySelector('[data-setting="selfName"]');
+      if (!input) return false;
+      input.value = 'MeetSync Smoke';
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const saved = await chrome.storage.local.get('meetsync:settings');
+      return saved['meetsync:settings']?.selfName === 'MeetSync Smoke';
+    })()`,
+  );
+  if (!optionsPersistence) throw new Error('A página de configurações não persistiu a alteração.');
 
   const meetSmokeUrl = 'https://meet.google.com/abc-defg-hij';
   await fetch(`${base}/json/new?${encodeURIComponent(meetSmokeUrl)}`, { method: 'PUT' });
@@ -160,6 +189,8 @@ try {
     minimumChromeVersion: manifest.minimum_chrome_version,
     permissions: manifest.permissions,
     contentScriptMounted: true,
+    optionsPageReady: true,
+    optionsPersistence: true,
   }));
 } catch (error) {
   if (stderr) console.error(stderr.slice(-4_000));
