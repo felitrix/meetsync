@@ -7,6 +7,7 @@ import {
   type AlertDetection,
   type CaptureStatus,
   type MeetingProvider,
+  type MeetingMarkerKind,
   type MeetingSession,
   type OllamaState,
   type Participant,
@@ -45,6 +46,9 @@ export type AlertsState = {
 export type CaptureHealth = {
   lastCaptionAt?: string;
   reconnectCount: number;
+  panelRebuildCount: number;
+  replayBlockedCount: number;
+  lastReplayAt?: string;
   observerAttached: boolean;
   silent: boolean;
 };
@@ -92,7 +96,7 @@ class Store {
     ollama: { reachable: false, models: [], testing: false },
     ui: { expanded: false, activeTab: 'transcript' },
     alerts: { active: null, recent: [], unread: 0 },
-    captureHealth: { reconnectCount: 0, observerAttached: false, silent: false },
+    captureHealth: { reconnectCount: 0, panelRebuildCount: 0, replayBlockedCount: 0, observerAttached: false, silent: false },
   };
 
   private listeners = new Set<Listener>();
@@ -157,7 +161,7 @@ class Store {
     };
     this.state.inMeeting = true;
     this.state.ended = false;
-    this.state.captureHealth = { reconnectCount: 0, observerAttached: false, silent: false };
+    this.state.captureHealth = { reconnectCount: 0, panelRebuildCount: 0, replayBlockedCount: 0, observerAttached: false, silent: false };
     this.emit();
   }
 
@@ -186,7 +190,7 @@ class Store {
     this.state.ended = false;
     this.state.captionsOn = false;
     this.state.captureStatus = 'idle';
-    this.state.captureHealth = { reconnectCount: 0, observerAttached: false, silent: false };
+    this.state.captureHealth = { reconnectCount: 0, panelRebuildCount: 0, replayBlockedCount: 0, observerAttached: false, silent: false };
     this.state.ui.summaryText = undefined;
     this.emit();
   }
@@ -233,6 +237,23 @@ class Store {
     this.emit();
   }
 
+  noteCaptionPanelRebuild() {
+    this.state.captureHealth = {
+      ...this.state.captureHealth,
+      panelRebuildCount: this.state.captureHealth.panelRebuildCount + 1,
+    };
+    this.emit();
+  }
+
+  noteCaptionReplayBlocked(iso: string) {
+    this.state.captureHealth = {
+      ...this.state.captureHealth,
+      replayBlockedCount: this.state.captureHealth.replayBlockedCount + 1,
+      lastReplayAt: iso,
+    };
+    this.emit();
+  }
+
   setCaptionSilent(silent: boolean) {
     if (this.state.captureHealth.silent === silent) return;
     this.state.captureHealth = { ...this.state.captureHealth, silent };
@@ -266,6 +287,22 @@ class Store {
     }
     this.state.session.participants = participants;
     if (changed) this.emit();
+  }
+
+  setMeetingConfidential(confidential: boolean) {
+    if (!!this.state.session.confidential === confidential) return;
+    this.state.session.confidential = confidential;
+    this.emit();
+  }
+
+  toggleMarker(entryId: string, kind: MeetingMarkerKind) {
+    if (!this.state.session.transcript.some((entry) => entry.id === entryId)) return;
+    const markers = this.state.session.markers ?? [];
+    const existing = markers.find((marker) => marker.entryId === entryId && marker.kind === kind);
+    this.state.session.markers = existing
+      ? markers.filter((marker) => marker.id !== existing.id)
+      : [...markers, { id: cryptoRandomId(), entryId, kind, createdAt: new Date().toISOString() }];
+    this.emit();
   }
 
   // ---- Alertas de menção ----

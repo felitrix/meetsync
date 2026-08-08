@@ -6,8 +6,8 @@ import pkg from './package.json';
  *
  * Permissões mínimas (RNF-017): apenas `storage` e `notifications`.
  * host_permissions: somente `meet.google.com` (RNF-018).
- * O Ollama fica restrito ao próprio computador (`localhost`/`127.0.0.1`), sem curingas
- * de rede ou hosts remotos (privacidade — RNF-013/014).
+ * Ollama e o relay NVIDIA ficam restritos a `localhost`/`127.0.0.1`; a extensão não recebe
+ * permissão para a API externa. Somente o companion local, fora do pacote, fala com a NVIDIA.
  */
 export default defineManifest({
   manifest_version: 3,
@@ -54,8 +54,7 @@ export default defineManifest({
   ],
   // O download usa Blob + link local; não precisa da permissão ampla `downloads`.
   permissions: ['storage', 'notifications'],
-  // localhost/127.0.0.1 concedidos na instalação: garante que o fetch ao Ollama no service
-  // worker contorne o CORS (Chrome dispensa CORS para hosts em host_permissions).
+  // localhost/127.0.0.1 concedidos na instalação para Ollama e relay NVIDIA local.
   // Permissões enxutas para a Chrome Web Store — sem curinga (evita rejeição no review).
   host_permissions: [
     'https://meet.google.com/*',

@@ -10,6 +10,10 @@ import {
 } from '@/services/ollama-client';
 import { loadSettings } from '@/services/storage-service';
 import { t, setLocale, resolveLocale } from '@/i18n';
+import {
+  handleNvidiaRelayAction,
+  type NvidiaRelayAction,
+} from '@/services/nvidia-relay-client';
 
 const MEETING_HOSTS = new Set([
   'meet.google.com',
@@ -80,6 +84,22 @@ function isStreamRequest(message: unknown): message is StreamRequest {
   );
 }
 
+function isNvidiaAction(message: unknown): message is NvidiaRelayAction {
+  if (!isRecord(message) || typeof message.type !== 'string' || !message.type.startsWith('nvidia:')) return false;
+  if (typeof message.url !== 'string' || message.url.length === 0 || message.url.length > MAX_URL_CHARS) return false;
+  if (message.type === 'nvidia:test') return message.token === undefined || typeof message.token === 'string';
+  if (message.type === 'nvidia:pair') return typeof message.code === 'string' && /^\d{6}$/.test(message.code);
+  if (typeof message.token !== 'string' || message.token.length < 20 || message.token.length > 300) return false;
+  if (message.type === 'nvidia:models' || message.type === 'nvidia:usage') return true;
+  return message.type === 'nvidia:generate' &&
+    typeof message.model === 'string' && message.model.length > 0 && message.model.length <= MAX_MODEL_CHARS &&
+    typeof message.prompt === 'string' && message.prompt.length > 0 && message.prompt.length <= 200_000 &&
+    typeof message.meetingId === 'string' && message.meetingId.length > 0 && message.meetingId.length <= 200 &&
+    typeof message.operation === 'string' && ['catch-up', 'summary', 'correction', 'question', 'title', 'format'].includes(message.operation) &&
+    typeof message.maxTokens === 'number' && Number.isInteger(message.maxTokens) && message.maxTokens >= 1 && message.maxTokens <= 1_200 &&
+    message.confirmed === true && message.confidential === false && typeof message.anonymized === 'boolean';
+}
+
 function boundedText(value: unknown, max = MAX_NOTIFICATION_CHARS): string {
   return typeof value === 'string' ? value.slice(0, max) : '';
 }
@@ -95,6 +115,14 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
   if (isTrustedSender(sender) && isOllamaAction(message)) {
     handleOllamaAction(message).then(sendResponse);
     return true; // resposta assíncrona
+  }
+  return undefined;
+});
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (isTrustedSender(sender) && isNvidiaAction(message)) {
+    handleNvidiaRelayAction(message).then(sendResponse);
+    return true;
   }
   return undefined;
 });

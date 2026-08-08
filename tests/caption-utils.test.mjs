@@ -49,6 +49,13 @@ test('mantém o cache de replay limitado', () => {
   assert.equal(guard.size, 3);
 });
 
+test('bloqueia bloco longo durante toda a sessao mesmo fora do modo resume', () => {
+  const guard = new CaptionReplayGuard();
+  const value = 'Este e um bloco longo de legenda que precisa permanecer protegido durante toda a reuniao para nao reaparecer varios minutos depois.';
+  guard.remember('Ana', value, 0);
+  assert.equal(guard.shouldBlock('Ana', value, 13 * 60_000, 'normal'), true);
+});
+
 test('detecta backup com replay de legendas e IDs diferentes', () => {
   const base = {
     participantName: 'Ana',

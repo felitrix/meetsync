@@ -3,10 +3,11 @@
 Extensão Chrome (Manifest V3) para **Google Meet** que captura automaticamente as
 **legendas exibidas pelo próprio Meet**, organiza tudo em formato de chat, **avisa quando
 te mencionam** e exporta a reunião em `.txt`/`.json` — com correção e resumo/ata opcionais
-via um servidor **Ollama** local.
+via um servidor **Ollama** local e, experimentalmente, NVIDIA por relay local protegido.
 
 > A extensão **não captura áudio** nem grava tela: apenas lê o texto das legendas que o Meet
-> já exibe. Os dados ficam **no seu navegador** e só vão ao Ollama que **você** configurar.
+> já exibe. Os dados ficam **no seu navegador** por padrão. A NVIDIA exige confirmação por
+> reunião, prévia e relay local; reuniões confidenciais permanecem bloqueadas.
 
 Em publicação na **Chrome Web Store**. Política de privacidade:
 <https://daraujo85.github.io/meetsync/privacy.html>.
@@ -19,6 +20,7 @@ Em publicação na **Chrome Web Store**. Política de privacidade:
 - Liga as legendas do Meet **automaticamente** e captura a transcrição enquanto estiverem ligadas (pausa/retoma com elas).
 - Reconcilia as janelas cumulativas/deslizantes do Meet para evitar blocos repetidos e divide falas longas em trechos legíveis com horário progressivo.
 - Mostra a saúde da captura: horário da última legenda, reconexões automáticas e aviso quando o Meet deixa de entregar novas legendas.
+- Mantém fingerprints de blocos longos durante toda a sessão, detecta reconstruções do painel e informa quantos replays foram bloqueados.
 - Ao restaurar uma janela minimizada, faz uma ressincronização controlada e bloqueia o replay de legendas antigas recriadas pelo Meet.
 - Histórico em **chat**: nome, horário e avatar colorido por participante; as mensagens do **chat de texto** do Meet entram **intercaladas em ordem cronológica** (com selo "chat") e **links viram clicáveis**.
 - **Indicador de captura**: ponto **vermelho REC** pulsante (capturando) / **terracota** (pausado).
@@ -47,6 +49,8 @@ Em publicação na **Chrome Web Store**. Política de privacidade:
 - **Ollama** (opt-in, local): **correção** da transcrição e **resumo/ata**, inclusive **em tempo real** via streaming (intervalo configurável 1/2/5/10 min).
 - **Vocabulário do negócio**: tags com nomes/produtos/siglas (ex.: Acme, Globex) injetadas nos prompts para corrigir palavras mal-transcritas pelo Google ("acme corp" → "Acme").
 - **Seu nome**: substitui "Você" pelo seu nome real na transcrição, exportações e resumos.
+- **O que perdi?**: recorte local dos últimos 5, 10 ou 15 minutos, com melhoria NVIDIA opcional e manual.
+- **Decisões e encaminhamentos**: candidatos e marcadores manuais sempre ligados à fala de origem.
 
 ### Interface
 - Identidade própria (logo + wordmark Meet**Sync**) em **Dark Mode**.
@@ -120,9 +124,20 @@ OLLAMA_ORIGINS="chrome-extension://*" ollama serve
 - Não pede permissão `downloads`: os arquivos são criados localmente após o clique do usuário.
 - Mensagens internas e importações de backup são validadas e limitadas antes do processamento.
 - O Ollama é aceito somente em `localhost` ou `127.0.0.1`; não há acesso a servidores remotos.
+- A integração NVIDIA é experimental e fica desativada até o pareamento. A chave é guardada no Gerenciador de Credenciais do Windows e somente o relay em `127.0.0.1` acessa a API externa.
+- O relay exige consentimento explícito, recusa reuniões confidenciais, usa allowlist de modelo e aplica no máximo 2 chamadas por reunião, 5 por dia, 16 mil tokens de entrada e 1.200 de saída por chamada.
 - Em janela anônima, a captura funciona em memória e pode ser exportada, mas não cria histórico persistente.
 - O histórico normal fica em `chrome.storage.local`; o limite configurável de 10, 20 ou 40 vale para reuniões não favoritas, enquanto favoritas são preservadas até exclusão manual;
   esse armazenamento local do Chrome não é criptografia de ponta a ponta.
+
+## NVIDIA experimental (somente protótipos não confidenciais)
+
+1. Rode `npm run relay:key` e cole a chave NVIDIA no prompt seguro.
+2. Rode `npm run relay`; o processo mostra um código de pareamento de seis dígitos.
+3. Abra **Configurações → NVIDIA experimental**, informe o código e clique em **Parear**.
+4. Na reunião, use **O que perdi?** e confira a prévia antes de qualquer envio.
+
+O relay não grava prompts ou respostas. Ele persiste apenas data, contadores e tokens reservados em `%LOCALAPPDATA%\MeetSync\nvidia-usage.json`. Erros e rate limits não geram retries automáticos.
 
 ---
 

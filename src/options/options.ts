@@ -1,5 +1,6 @@
 import { loadSettings, saveSettings } from '@/services/storage-service';
 import { normalizeOllamaUrl, ollama } from '@/services/ollama-client';
+import { nvidiaRelay } from '@/services/nvidia-relay-client';
 import { resolveLocale, type Locale } from '@/i18n';
 import type { AlertWatch, UserSettings } from '@/types';
 
@@ -177,6 +178,12 @@ const COPY = {
   },
 } as const;
 
+const NVIDIA_COPY: Record<Locale, { title: string; sub: string; url: string; code: string; pair: string; test: string; anon: string; anonSub: string; limits: string; warning: string; unpaired: string; paired: string }> = {
+  pt: { title: 'NVIDIA experimental', sub: 'Uso manual por relay local; a chave nunca entra na extensão.', url: 'Relay local', code: 'Código de pareamento', pair: 'Parear', test: 'Testar relay', anon: 'Anonimizar antes de enviar', anonSub: 'Remove nomes e identificadores comuns por padrão.', limits: 'Limites rígidos', warning: 'Somente protótipos e conteúdo não confidencial. Sem chamadas automáticas.', unpaired: 'Relay ainda não pareado.', paired: 'Relay pareado e protegido.' },
+  en: { title: 'Experimental NVIDIA', sub: 'Manual use through a local relay; the key never enters the extension.', url: 'Local relay', code: 'Pairing code', pair: 'Pair', test: 'Test relay', anon: 'Anonymize before sending', anonSub: 'Removes names and common identifiers by default.', limits: 'Hard limits', warning: 'Prototypes and non-confidential content only. No automatic calls.', unpaired: 'Relay is not paired yet.', paired: 'Relay paired and protected.' },
+  es: { title: 'NVIDIA experimental', sub: 'Uso manual mediante relay local; la clave nunca entra en la extensión.', url: 'Relay local', code: 'Código de emparejamiento', pair: 'Emparejar', test: 'Probar relay', anon: 'Anonimizar antes de enviar', anonSub: 'Elimina nombres e identificadores comunes por defecto.', limits: 'Límites estrictos', warning: 'Solo prototipos y contenido no confidencial. Sin llamadas automáticas.', unpaired: 'Relay aún no emparejado.', paired: 'Relay emparejado y protegido.' },
+};
+
 const root = document.getElementById('root')!;
 if (!root) throw new Error('Options root not found.');
 
@@ -185,6 +192,8 @@ let locale: Locale = 'pt';
 let models: string[] = [];
 let connectionMessage = '';
 let connectionKind: '' | 'is-ok' | 'is-error' = '';
+let nvidiaMessage = '';
+let nvidiaKind: '' | 'is-ok' | 'is-error' = '';
 let saveState: HTMLElement | null = null;
 
 function node<K extends keyof HTMLElementTagNameMap>(
@@ -404,6 +413,56 @@ function aiSection(): HTMLElement {
   ], true);
 }
 
+function nvidiaSection(): HTMLElement {
+  const c = NVIDIA_COPY[locale];
+  const url = node('input', { type: 'text', value: settings.nvidiaRelayUrl, placeholder: 'http://127.0.0.1:19876' }) as HTMLInputElement;
+  url.addEventListener('change', () => {
+    try {
+      const normalized = nvidiaRelay.normalizeUrl(url.value);
+      url.value = normalized;
+      void persist({ nvidiaRelayUrl: normalized, nvidiaRelayToken: undefined });
+    } catch (error) {
+      nvidiaMessage = error instanceof Error ? error.message : String(error); nvidiaKind = 'is-error'; render();
+    }
+  });
+  const code = node('input', { type: 'text', inputmode: 'numeric', maxlength: '6', placeholder: '000000' }) as HTMLInputElement;
+  const pair = node('button', { class: 'btn primary fit', type: 'button', text: c.pair }) as HTMLButtonElement;
+  pair.addEventListener('click', () => void (async () => {
+    if (!/^\d{6}$/.test(code.value.trim())) { nvidiaMessage = 'Informe o código de 6 dígitos exibido pelo relay.'; nvidiaKind = 'is-error'; render(); return; }
+    try {
+      const result = await nvidiaRelay.pair(settings.nvidiaRelayUrl, code.value.trim());
+      await persist({ nvidiaRelayToken: result.token, aiProvider: 'nvidia-relay' });
+      nvidiaMessage = c.paired; nvidiaKind = 'is-ok'; render();
+    } catch (error) { nvidiaMessage = error instanceof Error ? error.message : String(error); nvidiaKind = 'is-error'; render(); }
+  })());
+  const test = node('button', { class: 'btn fit', type: 'button', text: c.test }) as HTMLButtonElement;
+  test.addEventListener('click', () => void (async () => {
+    try {
+      const result = await nvidiaRelay.test(settings.nvidiaRelayUrl, settings.nvidiaRelayToken);
+      if (!result.paired) throw new Error(c.unpaired);
+      const [models, usage] = await Promise.all([
+        nvidiaRelay.listModels(settings.nvidiaRelayUrl, settings.nvidiaRelayToken!),
+        nvidiaRelay.usage(settings.nvidiaRelayUrl, settings.nvidiaRelayToken!),
+      ]);
+      nvidiaMessage = `${c.paired} ${usage.calls}/${usage.limits.dailyCalls} chamadas hoje · ${models.models.join(', ')}`;
+      nvidiaKind = 'is-ok';
+    } catch (error) { nvidiaMessage = error instanceof Error ? error.message : String(error); nvidiaKind = 'is-error'; }
+    render();
+  })());
+  const model = node('input', { type: 'text', value: settings.nvidiaModel }) as HTMLInputElement;
+  model.addEventListener('change', () => void persist({ nvidiaModel: model.value.trim() || 'meta/llama-3.1-8b-instruct' }));
+  const limits = `${settings.nvidiaDailyCallLimit}/dia · ${settings.nvidiaMeetingCallLimit}/reunião · ${settings.nvidiaInputTokenLimit} entrada · ${settings.nvidiaOutputTokenLimit} saída`;
+  return section(c.title, c.sub, [
+    node('div', { class: 'row' }, [field(c.url, url), test]),
+    node('div', { class: 'row' }, [field(c.code, code), pair]),
+    node('div', { class: `status ${nvidiaKind}`.trim(), text: nvidiaMessage || (settings.nvidiaRelayToken ? c.paired : c.unpaired) }),
+    field(copy().model, model),
+    toggle(c.anon, c.anonSub, settings.nvidiaAnonymize, (value) => void persist({ nvidiaAnonymize: value })),
+    field(c.limits, node('div', { class: 'hint', text: limits })),
+    node('p', { class: 'hint', text: c.warning }),
+  ], true);
+}
+
 function watchDetail(watch: AlertWatch): string {
   return watch.mode === 'keyword' ? (watch.terms ?? []).join(', ') : (watch.desc ?? '');
 }
@@ -492,6 +551,7 @@ function render(): void {
       captureSection(),
       exportSection(),
       aiSection(),
+      nvidiaSection(),
       watchesSection(),
     ]),
   ]));

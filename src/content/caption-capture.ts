@@ -204,6 +204,10 @@ export class CaptionCapture {
         this.container = container;
         const reconnected = this.everAttached;
         this.everAttached = true;
+        if (reconnected) {
+          this.resumeGuardUntil = Date.now() + RESUME_GUARD_MS;
+          store.noteCaptionPanelRebuild();
+        }
         store.noteCaptionObserver(true, reconnected);
         this.attachObserver(container);
         this.harvest(); // leitura inicial apenas ao anexar/reanexar
@@ -368,7 +372,10 @@ export class CaptionCapture {
     let segment = stream.currentSegment;
     if (!segment) {
       const mode = now <= this.resumeGuardUntil ? 'resume' : 'normal';
-      if (this.replayGuard.shouldBlock(stream.name, text, now, mode)) return;
+      if (this.replayGuard.shouldBlock(stream.name, text, now, mode)) {
+        store.noteCaptionReplayBlocked(new Date(now).toISOString());
+        return;
+      }
       segment = {
         id: cryptoRandomId(),
         capturedAt: new Date(now).toISOString(),

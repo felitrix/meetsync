@@ -27,6 +27,17 @@ export type TranscriptEntry = {
     | 'microsoft-teams-event'; // reação / mão levantada
 };
 
+export type MeetingMarkerKind = 'decision' | 'action' | 'question' | 'highlight';
+
+/** Marcação local vinculada a uma fala real; nunca é criada sem evidência na transcrição. */
+export type MeetingMarker = {
+  id: string;
+  entryId: string;
+  kind: MeetingMarkerKind;
+  createdAt: string;
+  note?: string;
+};
+
 /** É uma mensagem de chat (independente da plataforma)? Usado no export/JSON. */
 export function isChatSource(source: TranscriptEntry['source']): boolean {
   return source.endsWith('-chat');
@@ -60,7 +71,13 @@ export type MeetingSession = {
   captureEndedAt?: string;
   participants: Participant[];
   transcript: TranscriptEntry[];
+  /** Marcadores manuais persistidos junto com a reunião. */
+  markers?: MeetingMarker[];
+  /** Reuniões confidenciais nunca podem ser enviadas ao relay NVIDIA. */
+  confidential?: boolean;
 };
+
+export type AiProviderId = 'ollama' | 'nvidia-relay';
 
 export type UserSettings = {
   /** Idioma da UI/exportações/IA. undefined → detecta do navegador no primeiro uso. */
@@ -85,6 +102,17 @@ export type UserSettings = {
   /** Vocabulário do negócio: termos (empresas/produtos/siglas) injetados nos prompts de IA
    *  para corrigir palavras mal-transcritas pelo Google (ex.: "acme corp" → "AcmeCorp"). */
   vocabulary: string[];
+
+  // ---- Provedor NVIDIA experimental (sempre manual) ----
+  aiProvider: AiProviderId;
+  nvidiaRelayUrl: string;
+  nvidiaRelayToken?: string;
+  nvidiaModel: string;
+  nvidiaAnonymize: boolean;
+  nvidiaDailyCallLimit: number;
+  nvidiaMeetingCallLimit: number;
+  nvidiaInputTokenLimit: number;
+  nvidiaOutputTokenLimit: number;
 
   // ---- Alertas de menção (avisar quando falarem comigo / de um assunto) ----
   /** "Monitorar a reunião": liga o monitoramento de menções (toggle mestre). */
@@ -157,6 +185,15 @@ export const DEFAULT_SETTINGS: UserSettings = {
   exportJson: false,
   historyRetentionCount: 40,
   vocabulary: [],
+  aiProvider: 'ollama',
+  nvidiaRelayUrl: 'http://127.0.0.1:19876',
+  nvidiaRelayToken: undefined,
+  nvidiaModel: 'meta/llama-3.1-8b-instruct',
+  nvidiaAnonymize: true,
+  nvidiaDailyCallLimit: 5,
+  nvidiaMeetingCallLimit: 2,
+  nvidiaInputTokenLimit: 16_000,
+  nvidiaOutputTokenLimit: 1_200,
   alertsArmed: false,
   alertSound: true,
   selfName: '',

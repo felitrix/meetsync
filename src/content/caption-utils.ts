@@ -239,6 +239,7 @@ export type CaptionReplayMode = 'normal' | 'resume';
  */
 export class CaptionReplayGuard {
   private readonly seen = new Map<string, number>();
+  private readonly longSeenBySpeaker = new Map<string, string[]>();
   private readonly maxEntries: number;
 
   constructor(maxEntries = 5_000) {
@@ -254,12 +255,49 @@ export class CaptionReplayGuard {
     const key = this.key(participantName, text);
     if (!key) return false;
     const previous = this.seen.get(key);
-    if (previous == null) return false;
-    if (mode === 'resume') return true;
-
     const length = normalizeText(text).length;
-    const ttl = length >= 80 ? 120_000 : length >= 24 ? 20_000 : 4_000;
-    return now - previous <= ttl;
+    if (previous != null) {
+      if (mode === 'resume' || length >= 80) return true;
+      const ttl = length >= 24 ? 20_000 : 4_000;
+      return now - previous <= ttl;
+    }
+    return length >= 80 && this.matchesLongReplay(participantName, text);
+  }
+
+  private matchesLongReplay(participantName: string, text: string): boolean {
+    const speaker = normalizeText(participantName);
+    const current = normalizeText(text);
+    const previousTexts = this.longSeenBySpeaker.get(speaker) ?? [];
+    for (const previous of previousTexts) {
+      if (previous.includes(current) || current.includes(previous)) {
+        const ratio = Math.min(previous.length, current.length) / Math.max(previous.length, current.length);
+        if (ratio >= 0.55) return true;
+      }
+      const left = previous.split(' ');
+      const right = current.split(' ');
+      const max = Math.min(left.length, right.length, 80);
+      for (let size = max; size >= 12; size--) {
+        const previousSuffix = left.slice(-size).join(' ');
+        const currentPrefix = right.slice(0, size).join(' ');
+        const previousPrefix = left.slice(0, size).join(' ');
+        const currentSuffix = right.slice(-size).join(' ');
+        if (previousSuffix === currentPrefix || previousPrefix === currentSuffix) {
+          if (size / Math.min(left.length, right.length) >= 0.55) return true;
+          break;
+        }
+      }
+    }
+    return false;
+  }
+
+  private rememberLong(participantName: string, text: string): void {
+    const speaker = normalizeText(participantName);
+    const normalized = normalizeText(text);
+    if (!speaker || normalized.length < 80) return;
+    const values = this.longSeenBySpeaker.get(speaker) ?? [];
+    if (!values.includes(normalized)) values.push(normalized);
+    if (values.length > 250) values.splice(0, values.length - 250);
+    this.longSeenBySpeaker.set(speaker, values);
   }
 
   remember(participantName: string, text: string, now = Date.now()): void {
@@ -268,6 +306,7 @@ export class CaptionReplayGuard {
     // Renova a posição no Map para a poda funcionar como um LRU simples.
     this.seen.delete(key);
     this.seen.set(key, now);
+    this.rememberLong(participantName, text);
     while (this.seen.size > this.maxEntries) {
       const oldest = this.seen.keys().next().value as string | undefined;
       if (oldest == null) break;
@@ -277,6 +316,7 @@ export class CaptionReplayGuard {
 
   reset(): void {
     this.seen.clear();
+    this.longSeenBySpeaker.clear();
   }
 
   get size(): number {
