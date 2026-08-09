@@ -6,7 +6,7 @@ import { el } from './dom';
 import { icons } from './icons';
 import { logoImg } from './logo';
 import { store, cryptoRandomId, type AppState } from '@/services/store';
-import type { AlertDetection, AlertMode, MeetingSession } from '@/types';
+import type { AlertDetection, AlertMode, MeetingMarkerKind, MeetingSession } from '@/types';
 import {
   loadHistory,
   loadMeeting,
@@ -15,9 +15,12 @@ import {
   renameMeeting,
   updateMeetingSummary,
   buildMeetingBackup,
-  importMeetingBackup,
+  importMeetingFile,
+  applyHistoryRetention,
+  MAX_BACKUP_BYTES,
   type HistoryMeta,
 } from '@/services/storage-service';
+import { HISTORY_RETENTION_OPTIONS, type HistoryRetentionCount } from '@/services/retention-utils';
 import {
   buildTxt,
   buildSummaryTxt,
@@ -36,6 +39,8 @@ import { correctTranscript, summarizeMeeting, summarizeMeetingStream, askMeeting
 import { formatSummaryForWhatsapp } from '@/services/whatsapp-format';
 import { buildDeterministicSummaryI18n } from '@/services/deterministic-summary';
 import { ollama, normalizeOllamaUrl } from '@/services/ollama-client';
+import { createNvidiaRelayProvider } from '@/services/ai-provider';
+import { anonymizeTranscriptText, buildCatchUp, estimateTokens, extractEvidenceInsights } from '@/services/meeting-insights';
 import { initials } from '@/content/participant-resolver';
 import { t, bcp47, getLocale, seedWatchText, LOCALES, type Locale } from '@/i18n';
 
@@ -246,7 +251,7 @@ function renderMarkdownInto(container: HTMLElement, text: string, cursor = false
 
 export class Panel {
   private unsub: (() => void) | null = null;
-  private chatNodes = new Map<string, { row: HTMLElement; text: HTMLElement; time: HTMLElement }>();
+  private chatNodes = new Map<string, { row: HTMLElement; text: HTMLElement; time: HTMLElement; markers: HTMLElement }>();
   private autoScroll = true;
 
   // refs
@@ -293,6 +298,8 @@ export class Panel {
   private currentDetailMeetingId: string | null = null;
   private histImportInput!: HTMLInputElement;
   private histImportStatus!: HTMLElement;
+  private retentionPills!: HTMLElement;
+  private retentionNote!: HTMLElement;
   // modal de confirmação genérico (ex.: excluir reunião)
   private confirmModal!: HTMLElement;
   private confirmTitleEl!: HTMLElement;
@@ -312,6 +319,11 @@ export class Panel {
   private transcriptScroll!: HTMLElement;
   private tailStatus!: HTMLElement;
   private jumpBtn!: HTMLButtonElement;
+  private captureHealthChip!: HTMLElement;
+  private catchUpBox!: HTMLElement;
+  private catchUpMinutes: 5 | 10 | 15 = 5;
+  private insightsBox!: HTMLElement;
+  private nvidiaCatchUpCache = new Map<string, string>();
 
   // summary
   private rtToggle!: ReturnType<typeof makeToggle>;
@@ -563,7 +575,33 @@ export class Panel {
       el('div', { class: 'ms-chat-empty', text: t().transcript.empty }),
     ]);
     this.tailStatus = el('span', { class: 'ms-status is-paused' });
-    const scroll = el('div', { class: 'ms-tabpanel ms-scroll' }, [this.chatList, el('div', { class: 'ms-tail' }, [this.tailStatus])]);
+    this.captureHealthChip = el('span', { class: 'ms-health-chip', text: 'Integridade: aguardando' });
+    this.catchUpBox = el('div', { class: 'ms-catchup-box ms-hidden' });
+    const catchButtons = ([5, 10, 15] as const).map((minutes) => {
+      const button = el('button', { class: 'ms-pill', type: 'button', text: `${minutes} min` }) as HTMLButtonElement;
+      button.addEventListener('click', () => {
+        this.catchUpMinutes = minutes;
+        this.catchUpBox.classList.remove('ms-hidden');
+        renderMarkdownInto(this.catchUpBox, buildCatchUp(store.get().session, minutes));
+      });
+      return button;
+    });
+    const nvidiaButton = el('button', { class: 'ms-btn ms-btn-secondary ms-btn-sm', type: 'button', text: 'Melhorar com NVIDIA' }) as HTMLButtonElement;
+    nvidiaButton.addEventListener('click', () => void this.runNvidiaCatchUp(nvidiaButton));
+    const confidential = el('label', { class: 'ms-confidential' }, [
+      el('input', { type: 'checkbox' }),
+      el('span', { text: 'Reunião confidencial' }),
+    ]);
+    const confidentialInput = confidential.querySelector('input') as HTMLInputElement;
+    confidentialInput.addEventListener('change', () => store.setMeetingConfidential(confidentialInput.checked));
+    const toolbar = el('div', { class: 'ms-catchup' }, [
+      el('div', { class: 'ms-catchup-head' }, [el('strong', { text: 'O que perdi?' }), this.captureHealthChip]),
+      el('div', { class: 'ms-catchup-actions' }, [...catchButtons, nvidiaButton]),
+      confidential,
+      this.catchUpBox,
+    ]);
+    confidentialInput.checked = !!store.get().session.confidential;
+    const scroll = el('div', { class: 'ms-tabpanel ms-scroll' }, [toolbar, this.chatList, el('div', { class: 'ms-tail' }, [this.tailStatus])]);
     scroll.addEventListener('scroll', () => {
       const atBottom = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 50;
       this.autoScroll = atBottom;
@@ -604,6 +642,7 @@ export class Panel {
 
     this.summaryStatus = el('div', { class: 'ms-sum-status ms-hidden' });
     this.summaryContent = el('div', { class: 'ms-summary' });
+    this.insightsBox = el('div', { class: 'ms-insights' });
 
     const waIco = el('span', { class: 'ms-btn-ico', html: icons.copy });
     const waLabel = el('span', { text: t().summaryTab.copyWhatsapp });
@@ -642,7 +681,7 @@ export class Panel {
       }
     })());
 
-    const scroll = el('div', { class: 'ms-tabpanel ms-scroll' }, [this.summaryStatus, this.copyWaBtn, this.summaryContent]);
+    const scroll = el('div', { class: 'ms-tabpanel ms-scroll' }, [this.insightsBox, this.summaryStatus, this.copyWaBtn, this.summaryContent]);
 
     const wrap = el('div', { class: 'ms-tabwrap' }, [rtBar, scroll]);
     this.tabPanels.set('summary', wrap);
@@ -660,6 +699,48 @@ export class Panel {
       }),
     );
     this.intervalPills.parentElement?.classList.toggle('ms-hidden', !s.settings.realtimeSummary);
+  }
+
+  private renderRetentionPills(s: AppState) {
+    const x = t().exportTab;
+    const selected = s.settings.historyRetentionCount;
+    this.retentionPills.replaceChildren(
+      ...HISTORY_RETENTION_OPTIONS.map((count) => {
+        const button = el('button', {
+          class: 'ms-pill' + (selected === count ? ' is-sel' : ''),
+          type: 'button',
+          text: x.retentionOption(count),
+        }) as HTMLButtonElement;
+        button.addEventListener('click', () => void this.changeHistoryRetention(count));
+        return button;
+      }),
+    );
+    this.retentionNote.textContent = x.historyRetentionDesc;
+  }
+
+  private async changeHistoryRetention(next: HistoryRetentionCount) {
+    const current = store.get().settings.historyRetentionCount;
+    if (next === current) return;
+    const x = t().exportTab;
+    if (next < current) {
+      const history = await loadHistory();
+      const removable = Math.max(0, history.filter((item) => !item.starred).length - next);
+      if (removable > 0) {
+        const confirmed = await this.confirmDialog(
+          x.retentionConfirmTitle,
+          x.retentionConfirmMsg(removable, next),
+          x.retentionConfirmYes,
+          x.retentionConfirmNo,
+        );
+        if (!confirmed) return;
+      }
+    }
+    await store.updateSettings({ historyRetentionCount: next });
+    const result = await applyHistoryRetention(next);
+    this.retentionNote.textContent = result.removed > 0
+      ? x.retentionApplied(result.removed)
+      : x.historyRetentionDesc;
+    if (store.get().ui.historyOpen) await this.refreshHistory();
   }
 
   // ---------- aba Alertas (menções) ----------
@@ -905,6 +986,13 @@ export class Panel {
     this.tgSummary = toggleRow({ label: x.summary, desc: x.summaryDesc, onChange: (v) => void store.updateSettings({ includeSummary: v }) });
     this.tgSeparate = toggleRow({ label: x.separate, desc: x.separateDesc, onChange: (v) => void store.updateSettings({ separateSummaryFile: v }) });
     this.tgJson = toggleRow({ label: x.json, desc: x.jsonDesc, onChange: (v) => void store.updateSettings({ exportJson: v }) });
+    this.retentionPills = el('div', { class: 'ms-pill-group' });
+    this.retentionNote = el('div', { class: 'ms-vocab-desc ms-mt-2' });
+    const retentionSection = el('div', { class: 'ms-section' }, [
+      this.sectionLabel(x.historyRetention, icons.history),
+      this.retentionPills,
+      this.retentionNote,
+    ]);
 
     // Seletor de idioma — troca UI + exportações + IA, e re-renderiza o painel.
     const langField = el('div', { class: 'ms-section' }, [
@@ -997,6 +1085,7 @@ export class Panel {
       el('div', { class: 'ms-section' }, [this.sectionLabel(x.capturePrefs, icons.clock), this.tgAutoStart.root, this.tgAutoChat.root]),
       selfNameField,
       el('div', { class: 'ms-section' }, [this.sectionLabel(x.exportOptions, icons.settings), this.tgHeader.root, this.tgCorrect.root, this.tgSummary.root, this.tgSeparate.root, this.tgJson.root]),
+      retentionSection,
       vocabSection,
       ollamaSection,
       previewSection,
@@ -1907,10 +1996,18 @@ export class Panel {
     if (!file) return;
     const hi = t().history;
     try {
+      if (file.size > MAX_BACKUP_BYTES) throw new Error('Backup muito grande.');
       const text = await file.text();
-      const result = await importMeetingBackup(text);
+      const result = await importMeetingFile(text);
       if (result.ok) {
-        this.showHistImportStatus(hi.importOk, false);
+        if (result.kind === 'cleaned-export' || result.kind === 'cleaned-backup') {
+          const percent = result.originalCaptionChars > 0
+            ? Math.round((result.removedCaptionChars / result.originalCaptionChars) * 100)
+            : 0;
+          this.showHistImportStatus(hi.importCleanOk(percent), false);
+        } else {
+          this.showHistImportStatus(hi.importOk, false);
+        }
         this.histMetas = await loadHistory();
         this.renderHistoryList();
       } else {
@@ -1946,22 +2043,48 @@ export class Panel {
     this.captionsToggle.setDisabled(s.ended);
 
     // Indicador compacto + status strip (REC/clay) — só atualiza quando o estado muda.
-    if (this.lastDotKind !== s.captureStatus) {
-      this.lastDotKind = s.captureStatus;
+    const dotKind = `${s.captureStatus}:${s.captureHealth.silent}`;
+    if (this.lastDotKind !== dotKind) {
+      this.lastDotKind = dotKind;
       const cs = t().captureStatus;
       const map: Record<string, { dot: string; label: string; lcls: string }> = {
-        capturing: { dot: 'is-rec', label: cs.active, lcls: 'is-rec' },
-        processing: { dot: 'is-processing', label: cs.processing, lcls: '' },
-        error: { dot: 'is-error', label: cs.errorShort, lcls: 'is-error' },
+        'capturing:false': { dot: 'is-rec', label: cs.active, lcls: 'is-rec' },
+        'capturing:true': { dot: 'is-paused', label: cs.silentShort, lcls: 'is-paused' },
+        'processing:false': { dot: 'is-processing', label: cs.processing, lcls: '' },
+        'processing:true': { dot: 'is-processing', label: cs.processing, lcls: '' },
+        'error:false': { dot: 'is-error', label: cs.errorShort, lcls: 'is-error' },
+        'error:true': { dot: 'is-error', label: cs.errorShort, lcls: 'is-error' },
       };
-      const m = map[s.captureStatus] ?? { dot: 'is-paused', label: cs.paused, lcls: 'is-paused' };
+      const m = map[dotKind] ?? { dot: 'is-paused', label: cs.paused, lcls: 'is-paused' };
       this.compactDot.className = `ms-dot ${m.dot}`;
       this.compactDotLabel.textContent = m.label;
       this.compactDotLabel.className = m.lcls;
     }
     const cs = t().captureStatus;
+    const lastCaptionTime = s.captureHealth.lastCaptionAt ? formatTime(s.captureHealth.lastCaptionAt) : undefined;
+    const healthTitle = cs.healthTitle(lastCaptionTime, s.captureHealth.reconnectCount);
+    this.compactDotLabel.title = healthTitle;
+    this.stripStatus.title = healthTitle;
+    const health = s.captureHealth;
+    if (health.replayBlockedCount > 0) {
+      this.captureHealthChip.textContent = `Protegida · ${health.replayBlockedCount} replay(s) bloqueado(s)`;
+      this.captureHealthChip.className = 'ms-health-chip is-warn';
+    } else if (health.panelRebuildCount > 0 || health.reconnectCount > 0) {
+      this.captureHealthChip.textContent = `Reconectada · ${health.panelRebuildCount || health.reconnectCount}`;
+      this.captureHealthChip.className = 'ms-health-chip is-info';
+    } else if (s.session.transcript.length > 0) {
+      this.captureHealthChip.textContent = 'Integridade: íntegra';
+      this.captureHealthChip.className = 'ms-health-chip is-ok';
+    } else {
+      this.captureHealthChip.textContent = 'Integridade: aguardando';
+      this.captureHealthChip.className = 'ms-health-chip';
+    }
     if (s.ended) statusInto(this.stripStatus, 'idle', cs.endedStrip);
-    else if (s.captureStatus === 'capturing') statusInto(this.stripStatus, 'rec', cs.active);
+    else if (s.captureStatus === 'capturing' && s.captureHealth.silent) {
+      statusInto(this.stripStatus, 'paused', cs.silentHealth(lastCaptionTime));
+    } else if (s.captureStatus === 'capturing') {
+      statusInto(this.stripStatus, 'rec', cs.activeHealth(s.captureHealth.reconnectCount));
+    }
     else if (s.captureStatus === 'processing') statusInto(this.stripStatus, 'busy', cs.processingEllipsis);
     else if (s.captureStatus === 'error') statusInto(this.stripStatus, 'error', cs.errorProcessing);
     else statusInto(this.stripStatus, 'paused', cs.capturePaused);
@@ -1979,6 +2102,7 @@ export class Panel {
     this.renderIntervalPills(s);
     this.renderRtStatus();
     this.renderSummaryContent(s);
+    this.renderInsights(s);
 
     // Export toggles
     this.tgAutoStart.setOn(s.settings.autoEnableCaptions);
@@ -1989,6 +2113,7 @@ export class Panel {
     this.tgSummary.setOn(s.settings.includeSummary); this.tgSummary.setDisabled(!ready); this.tgSummary.setNote(ready ? null : xn.noteRequiresOllamaModel);
     this.tgSeparate.setOn(s.settings.separateSummaryFile); this.tgSeparate.setDisabled(!ready || !s.settings.includeSummary); this.tgSeparate.setNote(!ready ? xn.noteRequiresOllama : (!s.settings.includeSummary ? xn.noteEnableSummaryFirst : null));
     this.tgJson.setOn(s.settings.exportJson);
+    this.renderRetentionPills(s);
     if (!isFocused(this.selfNameInput) && this.selfNameInput.value !== s.settings.selfName) this.selfNameInput.value = s.settings.selfName;
     this.renderVocab(s);
 
@@ -2092,7 +2217,7 @@ export class Panel {
   private renderSummaryContent(s: AppState) {
     if (!this.copyWaBtn.disabled) this.copyWaBtn.classList.toggle('ms-hidden', !s.ui.summaryText || !!s.ui.summarizing);
     if (s.ui.summaryText) {
-      const tag = s.ui.summarizing ? `${s.ui.summaryText} stream` : s.ui.summaryText;
+      const tag = s.ui.summarizing ? `${s.ui.summaryText}\u0000stream` : s.ui.summaryText;
       if (tag !== this.renderedSummary) {
         this.renderedSummary = tag;
         renderMarkdownInto(this.summaryContent, s.ui.summaryText, s.ui.summarizing);
@@ -2165,6 +2290,7 @@ export class Panel {
       if (existing) {
         if (existing.text.textContent !== e.text) linkify(existing.text, e.text);
         existing.time.textContent = formatTime(e.capturedAt);
+        this.renderMarkerButtons(existing.markers, e.id, s);
       } else {
         const isChat = e.source === 'google-meet-chat';
         let avatar: HTMLElement;
@@ -2182,9 +2308,12 @@ export class Panel {
         head.append(time);
         const text = el('div', { class: 'ms-msg-text' + (isChat ? ' is-chat' : '') });
         linkify(text, e.text);
-        const row = el('div', { class: 'ms-msg' }, [avatar, el('div', { class: 'ms-msg-body' }, [head, text])]);
+        const markers = el('div', { class: 'ms-marker-actions' });
+        this.renderMarkerButtons(markers, e.id, s);
+        const row = el('div', { class: 'ms-msg' }, [avatar, el('div', { class: 'ms-msg-body' }, [head, text, markers])]);
+        row.dataset.entryId = e.id;
         this.chatList.append(row);
-        this.chatNodes.set(e.id, { row, text, time });
+        this.chatNodes.set(e.id, { row, text, time, markers });
       }
     }
 
@@ -2205,6 +2334,53 @@ export class Panel {
     if (this.autoScroll) this.transcriptScroll.scrollTop = this.transcriptScroll.scrollHeight;
   }
 
+  private renderMarkerButtons(container: HTMLElement, entryId: string, s: AppState) {
+    const kinds: Array<{ kind: MeetingMarkerKind; label: string; glyph: string }> = [
+      { kind: 'decision', label: 'Marcar como decisão', glyph: '✓' },
+      { kind: 'action', label: 'Marcar como ação', glyph: '→' },
+      { kind: 'question', label: 'Marcar como dúvida', glyph: '?' },
+      { kind: 'highlight', label: 'Destacar', glyph: '★' },
+    ];
+    const selected = new Set((s.session.markers ?? []).filter((marker) => marker.entryId === entryId).map((marker) => marker.kind));
+    container.replaceChildren(...kinds.map(({ kind, label, glyph }) => {
+      const button = el('button', {
+        class: `ms-marker-btn${selected.has(kind) ? ' is-active' : ''}`,
+        type: 'button', title: label, 'aria-label': label, text: glyph,
+      }) as HTMLButtonElement;
+      button.addEventListener('click', () => store.toggleMarker(entryId, kind));
+      return button;
+    }));
+  }
+
+  private renderInsights(s: AppState) {
+    const items = extractEvidenceInsights(s.session);
+    const header = el('div', { class: 'ms-insights-head' }, [
+      el('strong', { text: 'Decisões e encaminhamentos' }),
+      el('span', { class: 'ms-muted-sm', text: `${items.length} com evidência` }),
+    ]);
+    if (!items.length) {
+      this.insightsBox.replaceChildren(header, el('div', { class: 'ms-muted-sm', text: 'Marque uma fala ou aguarde uma decisão/ação identificável.' }));
+      return;
+    }
+    const rows = items.slice(0, 20).map((item) => {
+      const button = el('button', { class: 'ms-insight-item', type: 'button' }, [
+        el('span', { class: `ms-insight-kind is-${item.kind}`, text: item.kind === 'decision' ? 'DECISÃO' : item.kind === 'action' ? 'AÇÃO' : item.kind === 'question' ? 'DÚVIDA' : 'DESTAQUE' }),
+        el('span', { class: 'ms-insight-title', text: item.title }),
+        el('span', { class: 'ms-insight-meta', text: [item.owner, item.deadline, formatTime(item.capturedAt)].filter(Boolean).join(' · ') }),
+        el('span', { class: 'ms-insight-evidence', text: `Fonte: “${item.evidence}”` }),
+      ]) as HTMLButtonElement;
+      button.addEventListener('click', () => {
+        store.patchUi({ activeTab: 'transcript' });
+        const target = this.chatNodes.get(item.entryId)?.row;
+        target?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target?.classList.add('is-source-flash');
+        window.setTimeout(() => target?.classList.remove('is-source-flash'), 1600);
+      });
+      return button;
+    });
+    this.insightsBox.replaceChildren(header, ...rows);
+  }
+
   private renderTail(s: AppState) {
     const tl = t().tail;
     if (s.ended) statusInto(this.tailStatus, 'idle', tl.ended);
@@ -2222,6 +2398,57 @@ export class Panel {
     }
     this.preview.textContent = txt.slice(0, 1400) + (txt.length > 1400 ? '\n…' : '');
     this.previewName.textContent = buildFilename(s.session);
+  }
+
+  private async runNvidiaCatchUp(button: HTMLButtonElement) {
+    const s = store.get();
+    const local = buildCatchUp(s.session, this.catchUpMinutes);
+    this.catchUpBox.classList.remove('ms-hidden');
+    renderMarkdownInto(this.catchUpBox, local);
+    if (s.session.confidential) {
+      window.alert('Esta reunião está marcada como confidencial. O resumo permaneceu local.');
+      return;
+    }
+    if (!s.settings.nvidiaRelayToken) {
+      window.alert('Pareie primeiro o relay NVIDIA nas Configurações do MeetSync.');
+      return;
+    }
+    const names = s.session.participants.map((participant) => participant.name);
+    const input = s.settings.nvidiaAnonymize ? anonymizeTranscriptText(local, names) : local;
+    const estimated = estimateTokens(input);
+    if (estimated > s.settings.nvidiaInputTokenLimit) {
+      window.alert(`Entrada estimada em ${estimated} tokens; teto local ${s.settings.nvidiaInputTokenLimit}.`);
+      return;
+    }
+    const cacheKey = `${s.session.id}:${this.transcriptSig(s)}:${this.catchUpMinutes}:${s.settings.nvidiaModel}:${s.settings.nvidiaAnonymize}`;
+    const cached = this.nvidiaCatchUpCache.get(cacheKey);
+    if (cached) { renderMarkdownInto(this.catchUpBox, cached); return; }
+    const preview = input.slice(0, 700) + (input.length > 700 ? '\n…' : '');
+    const accepted = window.confirm(
+      `Envio experimental para NVIDIA\n\nModelo: ${s.settings.nvidiaModel}\nEstimativa: ${estimated} tokens de entrada\nAnonimizado: ${s.settings.nvidiaAnonymize ? 'sim' : 'não'}\n\nPrévia:\n${preview}\n\nEnviar agora?`,
+    );
+    if (!accepted) return;
+    button.disabled = true;
+    try {
+      const provider = createNvidiaRelayProvider(s.settings.nvidiaRelayUrl, s.settings.nvidiaRelayToken);
+      const answer = await provider.generate({
+        model: s.settings.nvidiaModel,
+        prompt: `Resuma de forma objetiva somente os fatos abaixo. Separe contexto, decisões e próximos passos. Não invente informações.\n\n${input}`,
+        meetingId: s.session.id,
+        operation: 'catch-up',
+        maxOutputTokens: Math.min(800, s.settings.nvidiaOutputTokenLimit),
+        confirmed: true,
+        confidential: false,
+        anonymized: s.settings.nvidiaAnonymize,
+      });
+      this.nvidiaCatchUpCache.set(cacheKey, answer);
+      renderMarkdownInto(this.catchUpBox, answer);
+    } catch (error) {
+      renderMarkdownInto(this.catchUpBox, local);
+      window.alert(`NVIDIA indisponível; mantive o resumo local. ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      button.disabled = false;
+    }
   }
 
   // ================= Ações =================

@@ -4,6 +4,31 @@
   box-sizing: border-box;
 }
 
+/* Insights locais, integridade e marcadores de evidência. */
+.ms-catchup { margin: 10px 12px 6px; padding: 10px; border: 1px solid var(--ms-border-subtle); border-radius: 10px; background: var(--ms-bg-surface-elevated); }
+.ms-catchup-head,.ms-catchup-actions,.ms-insights-head { display:flex; align-items:center; gap:8px; justify-content:space-between; }
+.ms-catchup-actions { justify-content:flex-start; flex-wrap:wrap; margin-top:8px; }
+.ms-health-chip { font-size:10px; color:var(--ms-text-muted); border:1px solid var(--ms-border-subtle); border-radius:999px; padding:3px 7px; }
+.ms-health-chip.is-ok { color:var(--ms-accent-blue); border-color:color-mix(in srgb,var(--ms-accent-blue) 55%,transparent); }
+.ms-health-chip.is-info { color:var(--ms-accent-blue); }
+.ms-health-chip.is-warn { color:var(--ms-paused-clay); border-color:var(--ms-paused-clay); }
+.ms-confidential { display:flex; align-items:center; gap:6px; margin-top:9px; color:var(--ms-text-muted); font-size:11px; cursor:pointer; }
+.ms-catchup-box { margin-top:10px; padding-top:9px; border-top:1px solid var(--ms-border-subtle); font-size:12px; }
+.ms-marker-actions { display:flex; gap:4px; margin-top:5px; opacity:.35; transition:opacity .15s ease; }
+.ms-msg:hover .ms-marker-actions,.ms-marker-actions:focus-within { opacity:1; }
+.ms-marker-btn { width:22px; height:20px; border:1px solid var(--ms-border-subtle); border-radius:5px; background:transparent; color:var(--ms-text-muted); cursor:pointer; font-size:11px; }
+.ms-marker-btn:hover,.ms-marker-btn.is-active { color:var(--ms-accent-blue); border-color:var(--ms-accent-blue); background:color-mix(in srgb,var(--ms-accent-blue) 12%,transparent); }
+.ms-insights { margin:10px 12px; padding:10px; border:1px solid var(--ms-border-subtle); border-radius:10px; background:var(--ms-bg-surface-elevated); }
+.ms-insights-head { margin-bottom:8px; }
+.ms-insight-item { display:grid; grid-template-columns:auto 1fr; gap:3px 8px; width:100%; padding:8px 0; border:0; border-top:1px solid var(--ms-border-subtle); background:transparent; color:var(--ms-text-primary); text-align:left; cursor:pointer; }
+.ms-insight-item:hover { background:color-mix(in srgb,var(--ms-accent-blue) 7%,transparent); }
+.ms-insight-kind { grid-row:1/4; align-self:start; margin-top:2px; padding:2px 5px; border-radius:4px; font-size:8px; font-weight:700; color:var(--ms-accent-blue); background:color-mix(in srgb,var(--ms-accent-blue) 12%,transparent); }
+.ms-insight-kind.is-action { color:var(--ms-paused-clay); background:color-mix(in srgb,var(--ms-paused-clay) 14%,transparent); }
+.ms-insight-title { font-size:11px; font-weight:600; }
+.ms-insight-meta,.ms-insight-evidence { font-size:10px; color:var(--ms-text-muted); }
+.ms-insight-evidence { font-style:italic; }
+.ms-msg.is-source-flash { outline:2px solid var(--ms-accent-blue); outline-offset:2px; border-radius:8px; }
+
 :host {
   all: initial;
   font-family: var(--ms-font);

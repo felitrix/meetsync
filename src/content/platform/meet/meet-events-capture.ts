@@ -15,6 +15,7 @@ const SELF_HAND_BTN = ['button[aria-label*="abaixar a mão" i]', 'button[aria-la
 // "outros levantaram a mão" — evita casar com o botão próprio "Abaixar a mão".
 const RE_HAND_OTHER = /levantou a m[ãa]o|com a m[ãa]o levantada|m[ãa]o levantada|raised (their )?hand|hand is raised/i;
 const REACTION_DEDUP_MS = 1200;
+const ANONYMOUS_REACTION_DEDUP_MS = 10_000;
 
 function queryAny(selectors: string[]): Element | null {
   for (const sel of selectors) {
@@ -104,7 +105,8 @@ export class MeetEventsCapture implements ChatController {
     }
     const key = `${name || '·anon'}|${emoji}`;
     const nowMs = Date.now();
-    if (nowMs - (this.lastReactAt.get(key) || 0) < REACTION_DEDUP_MS) return;
+    const dedupWindow = name ? REACTION_DEDUP_MS : ANONYMOUS_REACTION_DEDUP_MS;
+    if (nowMs - (this.lastReactAt.get(key) || 0) < dedupWindow) return;
     this.lastReactAt.set(key, nowMs);
     this.emit(name || t().events.someone, t().events.reacted(emoji));
   }

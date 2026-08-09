@@ -69,7 +69,22 @@ function header(): HTMLElement {
   (img as HTMLImageElement).src = MS_MARK_URL;
   (img as HTMLImageElement).width = 26;
   (img as HTMLImageElement).height = 26;
-  return el('div', { class: 'ms-pop-head' }, [img, el('span', { class: 'ms-pop-wordmark', text: 'MeetSync' })]);
+  const settingsBtn = el('button', {
+    class: 'ms-pop-settings',
+    type: 'button',
+    title: t().popup.settings,
+    'aria-label': t().popup.settings,
+    html: icons.settings,
+  }) as HTMLButtonElement;
+  settingsBtn.addEventListener('click', () => {
+    void chrome.runtime.openOptionsPage();
+    window.close();
+  });
+  return el('div', { class: 'ms-pop-head' }, [
+    img,
+    el('span', { class: 'ms-pop-wordmark', text: 'MeetSync' }),
+    settingsBtn,
+  ]);
 }
 
 function footer(): HTMLElement {

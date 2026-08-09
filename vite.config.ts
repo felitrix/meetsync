@@ -14,10 +14,16 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     target: 'es2022',
+    // Chrome pode rejeitar preloads de paginas chrome-extension:// quando o
+    // recurso e o modulo acabam associados a execution worlds diferentes.
+    // As paginas sao pequenas e carregam os chunks normalmente como ESM, entao
+    // o preload nao traz ganho relevante e apenas gera o aviso no console.
+    modulePreload: false,
     rollupOptions: {
       // Página de boas-vindas: não é referenciada no manifest (aberta via runtime.getURL),
       // então precisa ser declarada como entrada extra para o crxjs/Rollup empacotá-la.
       input: {
+        options: resolve(__dirname, 'src/options/options.html'),
         welcome: resolve(__dirname, 'src/welcome/welcome.html'),
       },
     },

@@ -25,28 +25,34 @@ export function normalizeOllamaUrl(url: string): string {
 }
 
 function normalizeUrl(url: string): string {
-  return normalizeOllamaUrl(url);
+  const normalized = normalizeOllamaUrl(url);
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new Error('URL do Ollama inválida.');
+  }
+  if (
+    parsed.protocol !== 'http:' ||
+    !['localhost', '127.0.0.1'].includes(parsed.hostname) ||
+    parsed.username ||
+    parsed.password
+  ) {
+    throw new Error('Por segurança, use um Ollama local em localhost ou 127.0.0.1.');
+  }
+  return parsed.origin;
 }
 
 async function ensureHostPermission(url: string): Promise<void> {
-  // localhost/127.0.0.1 já estão em host_permissions; hosts remotos são opcionais.
-  try {
-    const origin = new URL(url).origin;
-    if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) return;
-    const pattern = `${origin}/*`;
-    const has = await chrome.permissions.contains({ origins: [pattern] });
-    if (!has) {
-      // Best-effort: pode exigir gesto do usuário; se falhar, o fetch retornará erro claro.
-      await chrome.permissions.request({ origins: [pattern] }).catch(() => false);
-    }
-  } catch {
-    /* URL inválida tratada no fetch */
-  }
+  // Valida antes de qualquer acesso de rede. Os dois hosts já constam no manifest.
+  normalizeUrl(url);
 }
 
 export async function ollamaTags(url: string): Promise<string[]> {
   await ensureHostPermission(url);
-  const res = await fetch(`${normalizeUrl(url)}/api/tags`); // RF-078
+  const res = await fetch(`${normalizeUrl(url)}/api/tags`, {
+    signal: AbortSignal.timeout(15_000),
+  }); // RF-078
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = (await res.json()) as { models?: Array<{ name: string }> };
   return (json.models ?? []).map((m) => m.name);
@@ -63,6 +69,7 @@ export async function ollamaGenerate(url: string, model: string, prompt: string)
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ model, prompt, stream: false }),
+    signal: AbortSignal.timeout(10 * 60_000),
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json = (await res.json()) as { response?: string };
@@ -88,6 +95,7 @@ export async function streamGenerate(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ model: req.model, prompt: req.prompt, stream: true }),
+      signal: AbortSignal.timeout(10 * 60_000),
     });
     if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
 

@@ -89,6 +89,15 @@ export const pt = {
     processingEllipsis: 'Processando…',
     errorProcessing: 'Erro ao processar IA',
     capturePaused: 'Captura pausada',
+    silentShort: 'Sem legenda',
+    activeHealth: (reconnects: number) => reconnects > 0
+      ? `Captura ativa · ${reconnects} ${reconnects === 1 ? 'reconexão' : 'reconexões'}`
+      : 'Captura ativa',
+    silentHealth: (time?: string) => time
+      ? `Sem nova legenda desde ${time}`
+      : 'Aguardando a primeira legenda',
+    healthTitle: (time: string | undefined, reconnects: number) =>
+      `Última legenda: ${time ?? 'ainda não recebida'} · Reconexões: ${reconnects}`,
   },
 
   tail: {
@@ -157,6 +166,16 @@ export const pt = {
     exportOptions: 'Opções de exportação',
     language: 'Idioma',
     languageDesc: 'Idioma da interface, das exportações e das respostas da IA.',
+    historyRetention: 'Retenção do histórico',
+    historyRetentionDesc: 'Mantém as reuniões não favoritas mais recentes. Favoritos nunca são removidos automaticamente.',
+    retentionOption: (n: number) => `${n} reuniões`,
+    retentionConfirmTitle: 'Reduzir o histórico?',
+    retentionConfirmMsg: (removed: number, limit: number) =>
+      `${removed} ${removed === 1 ? 'reunião antiga será excluída' : 'reuniões antigas serão excluídas'} para aplicar o limite de ${limit}. Favoritos serão preservados.`,
+    retentionConfirmYes: 'Aplicar e excluir',
+    retentionConfirmNo: 'Cancelar',
+    retentionApplied: (removed: number) =>
+      `${removed} ${removed === 1 ? 'reunião antiga removida' : 'reuniões antigas removidas'}. Favoritos foram preservados.`,
     yourName: 'Seu nome',
     yourNamePlaceholder: 'ex.: Diego Araujo',
     yourNameDesc: 'Aparece no lugar de “Você” na transcrição, nas exportações e nos resumos.',
@@ -342,10 +361,11 @@ export const pt = {
     generateAtasHintNoAi: (n: number) => `${n} ${n === 1 ? 'reunião sem ata' : 'reuniões sem ata'} — gerar sem IA?`,
     generatingAtasNoAi: (done: number, total: number) => `Gerando atas sem IA… ${done}/${total}`,
     genAtaBusyNoAi: 'Gerando ata sem IA…',
-    importAction: 'Importar reunião',
-    importActionSub: 'Carrega um backup exportado de outro computador',
+    importAction: 'Importar ou limpar JSON',
+    importActionSub: 'Carrega backups e limpa transcrições exportadas por versões antigas',
     importOk: 'Reunião importada com sucesso!',
-    importError: 'Arquivo inválido. Selecione um backup exportado pelo MeetSync.',
+    importCleanOk: (percent: number) => `Arquivo importado e limpo — ${percent}% de repetição removida. O arquivo original não foi alterado.`,
+    importError: 'Arquivo inválido. Selecione um backup ou JSON de transcrição exportado pelo MeetSync.',
     exportBackup: 'Exportar reunião',
     exportBackupSub: 'Gera um arquivo para importar em outro computador, com tudo funcionando',
     deleteConfirmTitle: 'Excluir esta reunião?',
@@ -355,6 +375,7 @@ export const pt = {
   },
 
   popup: {
+    settings: 'Configurações',
     privacy: 'Privacidade',
     about: 'Sobre',
     help: 'Ajuda',

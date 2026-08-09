@@ -52,6 +52,27 @@ body {
   font-size: 14px;
   letter-spacing: 0.2px;
 }
+.ms-pop-settings {
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ms-fg-dim);
+  cursor: pointer;
+}
+.ms-pop-settings:hover {
+  background: var(--ms-bg-2);
+  color: var(--ms-fg);
+}
+.ms-pop-settings svg {
+  width: 18px;
+  height: 18px;
+}
 
 /* Corpo */
 .ms-pop-body {

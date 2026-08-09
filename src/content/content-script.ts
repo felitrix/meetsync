@@ -76,6 +76,10 @@ function mountUi(platform: PlatformAdapter): Panel {
  * para que ela sobreviva ao redirect/fechamento da aba pelo Meet (recuperável pelo popup).
  */
 function wireMeetingPersistence() {
+  // Em janela anônima a captura continua em memória e pode ser exportada manualmente,
+  // mas a extensão não cria histórico persistente da reunião.
+  if (chrome.extension.inIncognitoContext) return;
+
   let dirty = false;
   let timer: number | null = null;
   let lastEnded = false;
@@ -109,7 +113,9 @@ function wireMeetingPersistence() {
  * pede o toggle do painel. As notificações são delegadas ao service worker (host permissions).
  */
 function wireToolbarBridge() {
-  chrome.runtime.onMessage.addListener((msg: { type?: string }, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((msg: { type?: string }, sender, sendResponse) => {
+    // Aceita comandos somente de páginas da própria extensão (popup/background).
+    if (sender.id !== chrome.runtime.id) return undefined;
     if (!msg || typeof msg.type !== 'string') return undefined;
 
     if (msg.type === 'meetsync:get-status') {
@@ -197,9 +203,11 @@ async function main() {
   wireMeetingPersistence();
 
   // Se o popup pediu (fora da reunião) para abrir o histórico, abre agora que a aba carregou.
-  void consumeOpenHistory().then((open) => {
-    if (open) store.patchUi({ review: true, expanded: true, historyOpen: true });
-  });
+  if (!chrome.extension.inIncognitoContext) {
+    void consumeOpenHistory().then((open) => {
+      if (open) store.patchUi({ review: true, expanded: true, historyOpen: true });
+    });
+  }
 
   const detector = platform.createDetector({
     onJoined: (meta: PlatformMeetingMeta) => {

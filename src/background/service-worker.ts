@@ -10,6 +10,99 @@ import {
 } from '@/services/ollama-client';
 import { loadSettings } from '@/services/storage-service';
 import { t, setLocale, resolveLocale } from '@/i18n';
+import {
+  handleNvidiaRelayAction,
+  type NvidiaRelayAction,
+} from '@/services/nvidia-relay-client';
+
+const MEETING_HOSTS = new Set([
+  'meet.google.com',
+  'teams.cloud.microsoft',
+  'teams.microsoft.com',
+]);
+const MAX_URL_CHARS = 2_048;
+const MAX_MODEL_CHARS = 300;
+const MAX_PROMPT_CHARS = 2_000_000;
+const MAX_NOTIFICATION_CHARS = 1_000;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Confirma que a mensagem veio do popup ou de um content script desta própria extensão. */
+function isTrustedSender(sender?: chrome.runtime.MessageSender): boolean {
+  if (!sender || sender.id !== chrome.runtime.id) return false;
+  const rawUrl = sender.url ?? sender.tab?.url;
+  if (!rawUrl) return false;
+  try {
+    const url = new URL(rawUrl);
+    if (url.protocol === 'chrome-extension:') return url.hostname === chrome.runtime.id;
+    return url.protocol === 'https:' && MEETING_HOSTS.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isMeetingSender(sender?: chrome.runtime.MessageSender): boolean {
+  if (!isTrustedSender(sender)) return false;
+  const rawUrl = sender?.url ?? sender?.tab?.url;
+  try {
+    const url = new URL(rawUrl ?? '');
+    return url.protocol === 'https:' && MEETING_HOSTS.has(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function isOllamaAction(message: unknown): message is OllamaAction {
+  if (!isRecord(message) || typeof message.type !== 'string' || typeof message.url !== 'string') return false;
+  if (message.url.length === 0 || message.url.length > MAX_URL_CHARS) return false;
+  if (message.type === 'ollama:test' || message.type === 'ollama:tags') return true;
+  return (
+    message.type === 'ollama:generate' &&
+    typeof message.model === 'string' &&
+    message.model.length > 0 &&
+    message.model.length <= MAX_MODEL_CHARS &&
+    typeof message.prompt === 'string' &&
+    message.prompt.length > 0 &&
+    message.prompt.length <= MAX_PROMPT_CHARS
+  );
+}
+
+function isStreamRequest(message: unknown): message is StreamRequest {
+  return (
+    isRecord(message) &&
+    typeof message.url === 'string' &&
+    message.url.length > 0 &&
+    message.url.length <= MAX_URL_CHARS &&
+    typeof message.model === 'string' &&
+    message.model.length > 0 &&
+    message.model.length <= MAX_MODEL_CHARS &&
+    typeof message.prompt === 'string' &&
+    message.prompt.length > 0 &&
+    message.prompt.length <= MAX_PROMPT_CHARS
+  );
+}
+
+function isNvidiaAction(message: unknown): message is NvidiaRelayAction {
+  if (!isRecord(message) || typeof message.type !== 'string' || !message.type.startsWith('nvidia:')) return false;
+  if (typeof message.url !== 'string' || message.url.length === 0 || message.url.length > MAX_URL_CHARS) return false;
+  if (message.type === 'nvidia:test') return message.token === undefined || typeof message.token === 'string';
+  if (message.type === 'nvidia:pair') return typeof message.code === 'string' && /^\d{6}$/.test(message.code);
+  if (typeof message.token !== 'string' || message.token.length < 20 || message.token.length > 300) return false;
+  if (message.type === 'nvidia:models' || message.type === 'nvidia:usage') return true;
+  return message.type === 'nvidia:generate' &&
+    typeof message.model === 'string' && message.model.length > 0 && message.model.length <= MAX_MODEL_CHARS &&
+    typeof message.prompt === 'string' && message.prompt.length > 0 && message.prompt.length <= 200_000 &&
+    typeof message.meetingId === 'string' && message.meetingId.length > 0 && message.meetingId.length <= 200 &&
+    typeof message.operation === 'string' && ['catch-up', 'summary', 'correction', 'question', 'title', 'format'].includes(message.operation) &&
+    typeof message.maxTokens === 'number' && Number.isInteger(message.maxTokens) && message.maxTokens >= 1 && message.maxTokens <= 1_200 &&
+    message.confirmed === true && message.confidential === false && typeof message.anonymized === 'boolean';
+}
+
+function boundedText(value: unknown, max = MAX_NOTIFICATION_CHARS): string {
+  return typeof value === 'string' ? value.slice(0, max) : '';
+}
 
 /** Resolve o idioma a partir das settings salvas (o worker não tem o store em memória). */
 async function ensureLocale(): Promise<void> {
@@ -18,10 +111,18 @@ async function ensureLocale(): Promise<void> {
 }
 
 // Ações simples (tags/test/generate) via mensagem única.
-chrome.runtime.onMessage.addListener((message: OllamaAction, _sender, sendResponse) => {
-  if (message && typeof message.type === 'string' && message.type.startsWith('ollama:')) {
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (isTrustedSender(sender) && isOllamaAction(message)) {
     handleOllamaAction(message).then(sendResponse);
     return true; // resposta assíncrona
+  }
+  return undefined;
+});
+
+chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
+  if (isTrustedSender(sender) && isNvidiaAction(message)) {
+    handleNvidiaRelayAction(message).then(sendResponse);
+    return true;
   }
   return undefined;
 });
@@ -30,8 +131,9 @@ chrome.runtime.onMessage.addListener((message: OllamaAction, _sender, sendRespon
 // a ser capturada e quando termina. Feedback proativo sem precisar abrir o painel.
 type NotifyMessage = { type: 'meetsync:notify'; kind: 'start' | 'end' | 'hint'; code?: string; entries?: number; title?: string; text?: string };
 
-chrome.runtime.onMessage.addListener((message: NotifyMessage) => {
-  if (!message || message.type !== 'meetsync:notify') return undefined;
+chrome.runtime.onMessage.addListener((message: NotifyMessage, sender) => {
+  if (!isMeetingSender(sender) || !message || message.type !== 'meetsync:notify') return undefined;
+  if (!['start', 'end', 'hint'].includes(message.kind)) return undefined;
   const iconUrl = chrome.runtime.getURL('public/icons/icon-128.png');
   void (async () => {
     await ensureLocale();
@@ -41,7 +143,7 @@ chrome.runtime.onMessage.addListener((message: NotifyMessage) => {
         type: 'basic',
         iconUrl,
         title: n.captureStartedTitle,
-        message: message.code ? n.capturingCode(message.code) : n.capturingMeeting,
+        message: message.code ? n.capturingCode(boundedText(message.code, 300)) : n.capturingMeeting,
         priority: 0,
       });
     } else if (message.kind === 'end') {
@@ -52,12 +154,12 @@ chrome.runtime.onMessage.addListener((message: NotifyMessage) => {
         message: n.transcriptReady(message.entries ?? 0),
         priority: 0,
       });
-    } else if (message.kind === 'hint' && message.text) {
+    } else if (message.kind === 'hint' && typeof message.text === 'string') {
       void chrome.notifications.create({
         type: 'basic',
         iconUrl,
-        title: message.title || 'MeetSync',
-        message: message.text,
+        title: boundedText(message.title, 200) || 'MeetSync',
+        message: boundedText(message.text),
         priority: 0,
       });
     }
@@ -75,7 +177,15 @@ const badgeByTab = new Map<number, number>();
 let alertSeq = 0;
 
 chrome.runtime.onMessage.addListener((message: AlertMessage, sender) => {
-  if (!message || message.type !== 'meetsync:alert') return undefined;
+  if (
+    !isMeetingSender(sender) ||
+    !message ||
+    message.type !== 'meetsync:alert' ||
+    typeof message.title !== 'string' ||
+    typeof message.message !== 'string'
+  ) {
+    return undefined;
+  }
   const tabId = sender.tab?.id;
   const windowId = sender.tab?.windowId;
 
@@ -84,8 +194,8 @@ chrome.runtime.onMessage.addListener((message: AlertMessage, sender) => {
     chrome.notifications.create(notifId, {
       type: 'basic',
       iconUrl: chrome.runtime.getURL('public/icons/icon-128.png'),
-      title: message.title,
-      message: message.message,
+      title: boundedText(message.title, 200),
+      message: boundedText(message.message),
       priority: 2,
       requireInteraction: true,
     });
@@ -130,8 +240,15 @@ chrome.runtime.onInstalled.addListener((details) => {
 
 // Geração com streaming via Port: cada pedaço do Ollama é repassado ao content em tempo real.
 chrome.runtime.onConnect.addListener((port) => {
-  if (port.name !== STREAM_PORT) return;
-  port.onMessage.addListener((req: StreamRequest) => {
+  if (port.name !== STREAM_PORT || !isTrustedSender(port.sender)) {
+    port.disconnect();
+    return;
+  }
+  port.onMessage.addListener((req: unknown) => {
+    if (!isStreamRequest(req)) {
+      port.postMessage({ type: 'error', error: 'Solicitação inválida.' });
+      return;
+    }
     let alive = true;
     port.onDisconnect.addListener(() => {
       alive = false;
