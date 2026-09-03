@@ -13,6 +13,7 @@ import { store, cryptoRandomId } from '@/services/store';
 import type { TranscriptEntry } from '@/types';
 import { resolveSelfName } from '../../participant-resolver';
 import type { CaptionController } from '../types';
+import { t } from '@/i18n';
 
 const SELECTORS = {
   // Wrapper externo PRIMEIRO: contém todas as linhas independentemente do aninhamento interno
@@ -235,7 +236,7 @@ export class TeamsCaptionCapture implements CaptionController {
       if (text.length < MIN_TEXT_LEN) continue;
 
       const authorEl = row.querySelector(SELECTORS.author);
-      let name = (authorEl?.textContent || '').replace(/\s+/g, ' ').trim() || 'Participante';
+      let name = (authorEl?.textContent || '').replace(/\s+/g, ' ').trim() || t().events.someone;
       name = resolveSelfName(name, store.get().settings.selfName);
       const avatarUrl = (row.querySelector('img') as HTMLImageElement | null)?.src || undefined;
 

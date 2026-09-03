@@ -410,6 +410,8 @@ export const pt = {
     meetingEndedTitle: 'MeetSync — reunião encerrada',
     transcriptReady: (n: number) =>
       `Transcrição pronta${n ? ` (${n} fala${n === 1 ? '' : 's'})` : ''}. Abra o painel para revisar e baixar.`,
+    teamsCaptionLanguageHint:
+      'Legendas do Teams: confira o idioma falado (barra de legendas → ⚙️ → Configurações de idioma) — o padrão pode vir em inglês.',
   },
 
   // Rótulos que entram nos arquivos exportados (.txt) e nos prompts de IA.

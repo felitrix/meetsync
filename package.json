@@ -9,7 +9,10 @@
     "build": "tsc --noEmit && vite build",
     "zip": "node scripts/zip.mjs",
     "package": "npm run build && npm run zip",
-    "publish:store": "node scripts/publish-store.mjs"
+    "publish:store": "node scripts/publish-store.mjs",
+    "build:firefox": "node scripts/build-firefox.mjs",
+    "package:firefox": "npm run build && npm run build:firefox && node scripts/zip.mjs dist-firefox",
+    "test": "node --experimental-strip-types scripts/selfcheck.mjs"
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.6.1",

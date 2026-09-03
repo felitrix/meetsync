@@ -2,6 +2,7 @@
 // preenche os nós marcados com id. Usa innerHTML só nos trechos com <strong> dos próprios
 // dicionários (conteúdo controlado, não vem do usuário).
 
+import '@/lib/ext'; // compat Firefox (chrome -> browser). Precisa vir antes dos demais imports.
 import { loadSettings } from '@/services/storage-service';
 import { t, bcp47, setLocale, resolveLocale } from '@/i18n';
 

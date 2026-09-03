@@ -407,6 +407,8 @@ export const en: Messages = {
     meetingEndedTitle: 'MeetSync — meeting ended',
     transcriptReady: (n: number) =>
       `Transcript ready${n ? ` (${n} line${n === 1 ? '' : 's'})` : ''}. Open the panel to review and download.`,
+    teamsCaptionLanguageHint:
+      'Teams captions: check the spoken language (captions bar → ⚙️ → Language settings) — it may default to English.',
   },
 
   exportFile: {

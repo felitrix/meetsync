@@ -4,6 +4,7 @@
 // O popup vive em seu próprio contexto (sem o store da página): conversa com o content script
 // via chrome.tabs.sendMessage para ler o status e alternar o painel.
 
+import '@/lib/ext'; // compat Firefox (chrome -> browser). Precisa vir antes dos demais imports.
 import { MS_MARK_URL } from '@/ui/logo';
 import { icons } from '@/ui/icons';
 import { loadHistory, loadMeeting, loadSettings, requestOpenHistory, updateMeetingSummary, type HistoryMeta } from '@/services/storage-service';
@@ -32,6 +33,11 @@ function isSupportedMeetingUrl(url?: string): boolean {
       url.includes('teams.cloud.microsoft') ||
       url.includes('teams.microsoft.com'))
   );
+}
+
+/** tabs.sendMessage com Promise (Chrome e Firefox). Rejeita quando não há content script. */
+function sendToTab<T>(tabId: number, msg: unknown): Promise<T | undefined> {
+  return Promise.resolve(chrome.tabs.sendMessage(tabId, msg) as Promise<T | undefined>);
 }
 
 type StatusReply = {
@@ -101,10 +107,10 @@ function footer(): HTMLElement {
 async function openAboutPanel() {
   if (activeIsSupported && activeTabId !== undefined) {
     const tabId = activeTabId;
-    chrome.tabs.sendMessage(tabId, { type: 'meetsync:open-about' }, () => {
-      if (chrome.runtime.lastError) void chrome.tabs.create({ url: chrome.runtime.getURL(WELCOME_PATH) });
-      window.close();
-    });
+    await sendToTab(tabId, { type: 'meetsync:open-about' }).catch(() =>
+      chrome.tabs.create({ url: chrome.runtime.getURL(WELCOME_PATH) }),
+    );
+    window.close();
     return;
   }
   try {
@@ -113,7 +119,7 @@ async function openAboutPanel() {
     if (tab?.id !== undefined) {
       await chrome.tabs.update(tab.id, { active: true });
       if (tab.windowId !== undefined) await chrome.windows.update(tab.windowId, { focused: true });
-      chrome.tabs.sendMessage(tab.id, { type: 'meetsync:open-about' }, () => void chrome.runtime.lastError);
+      await sendToTab(tab.id, { type: 'meetsync:open-about' }).catch(() => undefined);
     } else {
       await chrome.tabs.create({ url: chrome.runtime.getURL(WELCOME_PATH) });
     }
@@ -198,15 +204,14 @@ function formatWhen(iso: string): string {
 async function openHistoryPanel() {
   if (activeIsSupported && activeTabId !== undefined) {
     const tabId = activeTabId;
-    chrome.tabs.sendMessage(tabId, { type: 'meetsync:open-history' }, () => {
-      if (chrome.runtime.lastError) {
-        // Content script ausente (aba aberta antes de um reload da extensão): recarrega com o
-        // sinal para abrir o histórico assim que carregar. Seguro aqui — só caímos neste card
-        // fora de uma reunião ativa, então recarregar não derruba ninguém de uma chamada.
-        void requestOpenHistory().then(() => chrome.tabs.reload(tabId));
-      }
-      window.close();
+    await sendToTab(tabId, { type: 'meetsync:open-history' }).catch(async () => {
+      // Content script ausente (aba aberta antes de um reload da extensão): recarrega com o
+      // sinal para abrir o histórico assim que carregar. Seguro aqui — só caímos neste card
+      // fora de uma reunião ativa, então recarregar não derruba ninguém de uma chamada.
+      await requestOpenHistory();
+      await chrome.tabs.reload(tabId);
     });
+    window.close();
     return;
   }
   try {
@@ -215,7 +220,7 @@ async function openHistoryPanel() {
     if (meetTab?.id !== undefined) {
       await chrome.tabs.update(meetTab.id, { active: true });
       if (meetTab.windowId !== undefined) await chrome.windows.update(meetTab.windowId, { focused: true });
-      chrome.tabs.sendMessage(meetTab.id, { type: 'meetsync:open-history' }, () => void chrome.runtime.lastError);
+      await sendToTab(meetTab.id, { type: 'meetsync:open-history' }).catch(() => undefined);
     } else {
       await requestOpenHistory();
       await chrome.tabs.create({ url: MEET_URL });
@@ -343,7 +348,7 @@ function renderInMeeting(s: StatusReply, tabId: number) {
     text: s.expanded ? p.collapsePanel : p.openPanel,
   });
   openBtn.addEventListener('click', () => {
-    chrome.tabs.sendMessage(tabId, { type: 'meetsync:toggle-panel' }, () => void chrome.runtime.lastError);
+    void sendToTab(tabId, { type: 'meetsync:toggle-panel' }).catch(() => undefined);
     window.close();
   });
 
@@ -368,14 +373,11 @@ async function init() {
 
   // Em aba suportada: pergunta o status ao content script. Se não responder (ainda carregando
   // ou fora de reunião), mostra o estado "na aba, sem reunião".
-  chrome.tabs.sendMessage(tab.id, { type: 'meetsync:get-status' }, (reply?: StatusReply) => {
-    if (chrome.runtime.lastError || !reply) {
-      renderMeetIdle();
-      return;
-    }
-    if (reply.inMeeting || reply.ended) renderInMeeting(reply, tab.id!);
-    else renderMeetIdle();
-  });
+  // Pergunta o status ao content script. Rejeita (Chrome/Firefox) quando não há ninguém
+  // ouvindo — nesse caso mostramos o estado "na aba, sem reunião".
+  const reply = await sendToTab<StatusReply>(tab.id, { type: 'meetsync:get-status' }).catch(() => undefined);
+  if (reply && (reply.inMeeting || reply.ended)) renderInMeeting(reply, tab.id);
+  else renderMeetIdle();
 }
 
 void init();

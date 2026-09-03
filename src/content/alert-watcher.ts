@@ -188,16 +188,15 @@ export class AlertWatcher {
     store.pushAlert(detection);
 
     // 2) notificação do Chrome (alcança você em outra aba) + badge no ícone — sempre que armado
-    chrome.runtime.sendMessage(
-      {
+    void Promise.resolve(
+      chrome.runtime.sendMessage({
         type: 'meetsync:alert',
         title: detection.reason,
         message: detection.who ? `${detection.who}: "${detection.text}"` : detection.text,
         notify: true,
         badge: true,
-      },
-      () => void chrome.runtime.lastError,
-    );
+      }),
+    ).catch(() => undefined);
 
     // 3) bipe opcional
     if (store.get().settings.alertSound) this.beep();

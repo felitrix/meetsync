@@ -1,6 +1,8 @@
 // Service worker (MV3) — enxuto. Executa as chamadas HTTP ao Ollama em nome do content
 // script (CORS/host permissions) e responde via mensagens.
 
+import '@/lib/ext'; // compat Firefox (chrome -> browser). Precisa vir antes dos demais imports.
+import { notificationOptions } from '@/lib/ext';
 import {
   handleOllamaAction,
   streamGenerate,
@@ -15,6 +17,19 @@ import { t, setLocale, resolveLocale } from '@/i18n';
 async function ensureLocale(): Promise<void> {
   const settings = await loadSettings();
   setLocale(resolveLocale(settings.locale));
+}
+
+const ICON_URL = () => chrome.runtime.getURL('public/icons/icon-128.png');
+
+/** Cria uma notificação ignorando falhas (ex.: usuário bloqueou notificações do navegador). */
+function notify(options: Record<string, unknown>, id?: string): void {
+  try {
+    const opts = notificationOptions(options) as chrome.notifications.NotificationOptions<true>;
+    const p = id ? chrome.notifications.create(id, opts) : chrome.notifications.create(opts);
+    void Promise.resolve(p).catch(() => undefined);
+  } catch {
+    /* notificações indisponíveis — segue sem avisar */
+  }
 }
 
 // Ações simples (tags/test/generate) via mensagem única.
@@ -32,12 +47,12 @@ type NotifyMessage = { type: 'meetsync:notify'; kind: 'start' | 'end' | 'hint'; 
 
 chrome.runtime.onMessage.addListener((message: NotifyMessage) => {
   if (!message || message.type !== 'meetsync:notify') return undefined;
-  const iconUrl = chrome.runtime.getURL('public/icons/icon-128.png');
+  const iconUrl = ICON_URL();
   void (async () => {
     await ensureLocale();
     const n = t().notify;
     if (message.kind === 'start') {
-      void chrome.notifications.create({
+      notify({
         type: 'basic',
         iconUrl,
         title: n.captureStartedTitle,
@@ -45,7 +60,7 @@ chrome.runtime.onMessage.addListener((message: NotifyMessage) => {
         priority: 0,
       });
     } else if (message.kind === 'end') {
-      void chrome.notifications.create({
+      notify({
         type: 'basic',
         iconUrl,
         title: n.meetingEndedTitle,
@@ -53,7 +68,7 @@ chrome.runtime.onMessage.addListener((message: NotifyMessage) => {
         priority: 0,
       });
     } else if (message.kind === 'hint' && message.text) {
-      void chrome.notifications.create({
+      notify({
         type: 'basic',
         iconUrl,
         title: message.title || 'MeetSync',
@@ -81,22 +96,25 @@ chrome.runtime.onMessage.addListener((message: AlertMessage, sender) => {
 
   if (message.notify) {
     const notifId = `meetsync-alert-${++alertSeq}`;
-    chrome.notifications.create(notifId, {
-      type: 'basic',
-      iconUrl: chrome.runtime.getURL('public/icons/icon-128.png'),
-      title: message.title,
-      message: message.message,
-      priority: 2,
-      requireInteraction: true,
-    });
+    notify(
+      {
+        type: 'basic',
+        iconUrl: ICON_URL(),
+        title: message.title,
+        message: message.message,
+        priority: 2,
+        requireInteraction: true,
+      },
+      notifId,
+    );
     if (typeof tabId === 'number') alertTabByNotif.set(notifId, { tabId, windowId });
   }
 
   if (message.badge && typeof tabId === 'number') {
     const count = (badgeByTab.get(tabId) ?? 0) + 1;
     badgeByTab.set(tabId, count);
-    void chrome.action.setBadgeBackgroundColor({ color: '#EA4335' });
-    void chrome.action.setBadgeText({ tabId, text: String(count) });
+    void chrome.action.setBadgeBackgroundColor({ color: '#EA4335' }).catch(() => undefined);
+    void chrome.action.setBadgeText({ tabId, text: String(count) }).catch(() => undefined);
   }
   return undefined;
 });
@@ -105,20 +123,32 @@ chrome.runtime.onMessage.addListener((message: AlertMessage, sender) => {
 chrome.notifications.onClicked.addListener((notifId) => {
   const target = alertTabByNotif.get(notifId);
   if (!target) return;
-  void chrome.tabs.update(target.tabId, { active: true });
-  if (typeof target.windowId === 'number') void chrome.windows.update(target.windowId, { focused: true });
-  void chrome.notifications.clear(notifId);
+  void chrome.tabs.update(target.tabId, { active: true }).catch(() => undefined);
+  if (typeof target.windowId === 'number') void chrome.windows.update(target.windowId, { focused: true }).catch(() => undefined);
+  void Promise.resolve(chrome.notifications.clear(notifId)).catch(() => undefined);
   alertTabByNotif.delete(notifId);
   clearBadge(target.tabId);
 });
 
+// Notificação fechada (pelo usuário ou pelo sistema): solta a referência à aba.
+chrome.notifications.onClosed.addListener((notifId) => alertTabByNotif.delete(notifId));
+
 // Ao voltar para a aba do Meet, zera o badge de alertas pendentes.
 chrome.tabs.onActivated.addListener(({ tabId }) => clearBadge(tabId));
+
+// Aba fechada: descarta o badge e as notificações que apontavam para ela (evita segurar
+// tabIds mortos na memória do worker por toda a sessão).
+chrome.tabs.onRemoved.addListener((tabId) => {
+  badgeByTab.delete(tabId);
+  for (const [notifId, target] of alertTabByNotif) {
+    if (target.tabId === tabId) alertTabByNotif.delete(notifId);
+  }
+});
 
 function clearBadge(tabId: number) {
   if (!badgeByTab.has(tabId)) return;
   badgeByTab.delete(tabId);
-  void chrome.action.setBadgeText({ tabId, text: '' });
+  void chrome.action.setBadgeText({ tabId, text: '' }).catch(() => undefined);
 }
 
 // Página de boas-vindas (C): aberta apenas na primeira instalação.
@@ -131,11 +161,11 @@ chrome.runtime.onInstalled.addListener((details) => {
 // Geração com streaming via Port: cada pedaço do Ollama é repassado ao content em tempo real.
 chrome.runtime.onConnect.addListener((port) => {
   if (port.name !== STREAM_PORT) return;
+  let alive = true;
+  port.onDisconnect.addListener(() => {
+    alive = false;
+  });
   port.onMessage.addListener((req: StreamRequest) => {
-    let alive = true;
-    port.onDisconnect.addListener(() => {
-      alive = false;
-    });
     void streamGenerate((msg) => {
       if (alive) {
         try {

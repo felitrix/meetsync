@@ -14,6 +14,7 @@
 import { store, cryptoRandomId } from '@/services/store';
 import type { TranscriptEntry } from '@/types';
 import { avatarFromCaptionRow, resolveSelfName } from './participant-resolver';
+import { t } from '@/i18n';
 
 // Seletores confirmados ao vivo (Meet PT-BR, jun/2026). O `jsname`/`jscontroller` são os
 // mais estáveis; as classes ofuscadas (a4cQT etc.) ficam como último fallback.
@@ -226,11 +227,13 @@ export class CaptionCapture {
 
       // "Você" → nome configurado (resolvido aqui para manter dedup e downstream consistentes).
       parsed.name = resolveSelfName(parsed.name, store.get().settings.selfName);
-      const name = parsed.name || 'Participante';
+      const name = parsed.name || t().events.someone;
       let open = this.rowToEntry.get(row);
+      // Compara sempre o nome JÁ resolvido (com fallback): comparar com `parsed.name` cru fazia
+      // toda fala sem nome parecer nova a cada tick, duplicando linhas na transcrição.
       const isNewUtterance =
         !open ||
-        open.name !== parsed.name ||
+        open.name !== name ||
         // texto encolheu de forma relevante => o nó foi reciclado para outra fala
         parsed.text.length + 8 < open.text.length;
 
@@ -248,7 +251,7 @@ export class CaptionCapture {
         this.rowToEntry.set(row, open);
       } else {
         // atualização in-place da MESMA fala: preserva o horário de início (não vira "agora")
-        open!.name = parsed.name;
+        open!.name = name;
         open!.text = parsed.text;
       }
 

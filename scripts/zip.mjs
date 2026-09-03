@@ -5,15 +5,18 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const dist = resolve(root, 'dist');
+// Argumento opcional: pasta a empacotar (default dist/). Usado por `npm run package:firefox`.
+const dirName = process.argv[2] ?? 'dist';
+const dist = resolve(root, dirName);
 
 if (!existsSync(dist)) {
-  console.error('✗ dist/ não encontrada. Rode `npm run build` antes de `npm run zip`.');
+  console.error(`✗ ${dirName}/ não encontrada. Rode \`npm run build\` antes de \`npm run zip\`.`);
   process.exit(1);
 }
 
 const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
-const out = resolve(root, `meetsync-${pkg.version}.zip`);
+const suffix = dirName === 'dist' ? '' : `-${dirName.replace(/^dist-/, '')}`;
+const out = resolve(root, `meetsync-${pkg.version}${suffix}.zip`);
 
 if (existsSync(out)) rmSync(out);
 

@@ -1,6 +1,7 @@
 // Bootstrap do content script: monta host + Shadow DOM, inicializa estado, conecta
 // detector de reunião, captura de legendas e UI.
 
+import '@/lib/ext'; // compat Firefox (chrome -> browser). Precisa vir antes dos demais imports.
 import tokensCss from '@/ui/styles/tokens.css?inline';
 import meetsyncCss from '@/ui/styles/meetsync.css?inline';
 import { store } from '@/services/store';
@@ -24,7 +25,9 @@ function extAlive(): boolean {
 /** Envia mensagem ao worker de forma segura (silencia contexto invalidado). */
 function safeSend(msg: unknown) {
   try {
-    if (extAlive()) chrome.runtime.sendMessage(msg, () => void chrome.runtime.lastError);
+    // Sem callback: a API com Promise funciona no Chrome e no Firefox. O .catch() engole o
+    // "Receiving end does not exist" quando o worker ainda não subiu.
+    if (extAlive()) void Promise.resolve(chrome.runtime.sendMessage(msg)).catch(() => undefined);
   } catch {
     /* contexto invalidado — ignora */
   }

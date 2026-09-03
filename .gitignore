@@ -3,6 +3,7 @@ node_modules/
 
 # build output (carregue via releases/ ou rode `npm run build`)
 dist/
+dist-firefox/
 
 # zips soltos na raiz (os oficiais ficam em releases/)
 /meetsync-*.zip

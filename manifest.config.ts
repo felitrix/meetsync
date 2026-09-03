@@ -50,7 +50,8 @@ export default defineManifest({
       run_at: 'document_idle',
     },
   ],
-  permissions: ['storage', 'downloads', 'notifications'],
+  // `downloads` não entra: o download sai de um <a download> com Blob URL, que não usa a API.
+  permissions: ['storage', 'notifications'],
   // localhost/127.0.0.1 concedidos na instalação: garante que o fetch ao Ollama no service
   // worker contorne o CORS (Chrome dispensa CORS para hosts em host_permissions).
   // Permissões enxutas para a Chrome Web Store — sem curinga (evita rejeição no review).

@@ -71,9 +71,7 @@ export class MeetDetector {
   constructor(private cb: DetectorCallbacks) {}
 
   start() {
-    this.patchHistory();
     window.addEventListener('popstate', this.onUrlMaybeChanged);
-    window.addEventListener('meetsync:locationchange', this.onUrlMaybeChanged);
 
     this.observer = new MutationObserver(() => this.evaluate());
     this.observer.observe(document.documentElement, { childList: true, subtree: true });
@@ -88,7 +86,6 @@ export class MeetDetector {
     this.observer = null;
     if (this.pollId !== null) clearInterval(this.pollId);
     window.removeEventListener('popstate', this.onUrlMaybeChanged);
-    window.removeEventListener('meetsync:locationchange', this.onUrlMaybeChanged);
   }
 
   private onUrlMaybeChanged = () => this.evaluate();
@@ -121,21 +118,6 @@ export class MeetDetector {
         this.absentSince = 0;
         this.cb.onLeft();
       }
-    }
-  }
-
-  /** Emite evento custom em pushState/replaceState para detectar navegação SPA. */
-  private patchHistory() {
-    if ((window as unknown as { __meetsyncHistoryPatched?: boolean }).__meetsyncHistoryPatched) return;
-    (window as unknown as { __meetsyncHistoryPatched?: boolean }).__meetsyncHistoryPatched = true;
-    const fire = () => window.dispatchEvent(new Event('meetsync:locationchange'));
-    for (const m of ['pushState', 'replaceState'] as const) {
-      const orig = history[m];
-      history[m] = function (this: History, ...args: Parameters<History['pushState']>) {
-        const ret = orig.apply(this, args);
-        fire();
-        return ret;
-      } as History[typeof m];
     }
   }
 }

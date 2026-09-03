@@ -191,9 +191,11 @@ export function buildMeetingJson(session: MeetingSession, summaryText?: string):
   return JSON.stringify(obj, null, 2);
 }
 
-/** Dispara o download de um conteúdo de texto. */
+/** Dispara o download de um conteúdo de texto. O tipo sai da extensão do arquivo — o .json
+ *  exportado para automações estava indo como text/plain. */
 export function downloadText(filename: string, content: string): void {
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const mime = filename.toLowerCase().endsWith('.json') ? 'application/json' : 'text/plain';
+  const blob = new Blob([content], { type: `${mime};charset=utf-8` });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
